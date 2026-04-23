@@ -1,0 +1,174 @@
+# Mimi backend — полный стек по ТЗ (практика 7):
+#   • 8 изолированных PostgreSQL инстансов (Database per Service, кроме users
+#     которая общая для auth-service и users-service — как на диаграмме практики)
+#   • Redis 7 (кэш + Pub/Sub для notifications-service)
+#   • NGINX — API Gateway (маршрутизация, SSL-терминация, балансировка)
+#   • 9 микросервисов на Go
+#
+# В этом файле сейчас развёрнуты только инфра + auth-service. Остальные
+# сервисы будут добавлены в последующих шагах.
+#
+# Запуск:  docker compose up -d --build
+# Миграции прогоняются автоматически при старте каждого сервиса.
+
+name: mimi
+
+x-service-defaults: &service-defaults
+  build:
+    context: .
+    dockerfile: docker/service.Dockerfile
+  restart: unless-stopped
+  environment: &service-env
+    JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me-at-least-32-bytes}
+    ACCESS_TTL: ${ACCESS_TTL:-15m}
+    REFRESH_TTL: ${REFRESH_TTL:-168h}
+    BCRYPT_COST: ${BCRYPT_COST:-12}
+    REDIS_URL: redis://redis:6379/0
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    PORT: "8080"
+
+x-postgres-defaults: &postgres-defaults
+  image: postgres:15-alpine
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: mimi
+    POSTGRES_PASSWORD: mimi
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U mimi"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+
+services:
+  # ─── Shared infrastructure ────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [mimi-net]
+
+  # ─── Per-service PostgreSQL instances (Database per Service) ─────
+  postgres-users:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_users
+    volumes: [pg-users:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-projects:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_projects
+    volumes: [pg-projects:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-tasks:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_tasks
+    volumes: [pg-tasks:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-docs:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_docs
+    volumes: [pg-docs:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-boards:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_boards
+    volumes: [pg-boards:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-teams:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_teams
+    volumes: [pg-teams:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-git:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_git
+    volumes: [pg-git:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  postgres-notifications:
+    <<: *postgres-defaults
+    environment:
+      POSTGRES_USER: mimi
+      POSTGRES_PASSWORD: mimi
+      POSTGRES_DB: mimi_notifications
+    volumes: [pg-notifications:/var/lib/postgresql/data]
+    networks: [mimi-net]
+
+  # ─── Microservices ───────────────────────────────────────────────
+  auth-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: auth-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: auth-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-users:5432/mimi_users?sslmode=disable
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [mimi-net]
+
+  # ─── Gateway ─────────────────────────────────────────────────────
+  gateway:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - auth-service
+    networks: [mimi-net]
+
+volumes:
+  redis-data:
+  pg-users:
+  pg-projects:
+  pg-tasks:
+  pg-docs:
+  pg-boards:
+  pg-teams:
+  pg-git:
+  pg-notifications:
+
+networks:
+  mimi-net:
+    driver: bridge
