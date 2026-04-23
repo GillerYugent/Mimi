@@ -15,7 +15,7 @@
 | Сервис | Статус | Домен |
 | --- | --- | --- |
 | auth-service | ✅ готов | Регистрация, вход, JWT access/refresh, bcrypt, профиль |
-| users-service | ⏳ в работе | My Space, справочник пользователей |
+| users-service | ✅ готов | My Space, публичные профили, поиск по email, batch-lookup |
 | projects-service | ⏳ | Проекты, архив, Git-метаданные |
 | tasks-service | ⏳ | Задачи, Kanban, подзадачи, метки |
 | docs-service | ⏳ | Страницы, блоки, вложенность, история |

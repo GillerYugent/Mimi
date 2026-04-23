@@ -146,6 +146,28 @@ services:
         condition: service_healthy
     networks: [mimi-net]
 
+  users-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: users-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: users-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-users:5432/mimi_users?sslmode=disable
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # auth-service мигрирует первым — это гарантирует наличие таблицы `users`
+      # к моменту, когда users-service будет запрашивать её.
+      auth-service:
+        condition: service_started
+    networks: [mimi-net]
+
   # ─── Gateway ─────────────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
@@ -156,6 +178,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - auth-service
+      - users-service
     networks: [mimi-net]
 
 volumes:
