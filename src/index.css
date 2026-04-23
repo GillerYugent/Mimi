@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  input,
+  textarea,
+  button,
+  select {
+    @apply font-sans;
+  }
+
+  /* Notion-style selection */
+  ::selection {
+    background: rgba(35, 131, 226, 0.14);
+  }
+
+  /* Scrollbar — minimal */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(55, 53, 47, 0.16);
+    border-radius: 10px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(55, 53, 47, 0.32);
+    background-clip: content-box;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium transition-colors;
+  }
+  .btn-primary {
+    @apply bg-ink text-paper hover:bg-ink/90;
+  }
+  .btn-ghost {
+    @apply text-ink hover:bg-paper-hover;
+  }
+  .btn-outline {
+    @apply border border-line text-ink hover:bg-paper-hover;
+  }
+  .btn-danger {
+    @apply text-red-600 hover:bg-red-50;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none transition-colors placeholder:text-ink-lighter focus:border-ink/30 focus:ring-2 focus:ring-ink/5;
+  }
+
+  .card {
+    @apply rounded-md border border-line bg-paper;
+  }
+
+  .sidebar-item {
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-sm text-ink-light transition-colors hover:bg-paper-hover;
+  }
+  .sidebar-item.active {
+    @apply bg-paper-active text-ink;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-sm border border-line bg-paper-soft px-1.5 py-0.5 text-xs text-ink-light;
+  }
+
+  .divider {
+    @apply my-2 h-px w-full bg-line;
+  }
+
+  .title-serif {
+    font-family: 'Lyon-Text', Georgia, 'ui-serif', serif;
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Block editor styles */
+.block {
+  @apply relative py-0.5;
+}
+.block[contenteditable='true']:empty::before {
+  content: attr(data-placeholder);
+  @apply pointer-events-none text-ink-lighter;
+}
+
+/* Canvas */
+.canvas-grid {
+  background-image: radial-gradient(rgba(55, 53, 47, 0.12) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
