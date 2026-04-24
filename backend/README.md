@@ -18,7 +18,7 @@
 | users-service | ✅ готов | My Space, публичные профили, поиск по email, batch-lookup |
 | projects-service | ✅ готов | CRUD проектов, архив/восстановление, Redis-кэш списка (TTL 60с) |
 | tasks-service | ✅ готов | CRUD задач, подзадачи, метки, фильтры, stats, Pub/Sub событий |
-| docs-service | ⏳ | Страницы, блоки, вложенность, история |
+| docs-service | ✅ готов | Страницы c JSONB-блоками, вложенность, версии, поиск, восстановление |
 | boards-service | ⏳ | Канвасы (JSONB) |
 | teams-service | ⏳ | Команды, роли, права |
 | git-service | ⏳ | OAuth GitHub/GitLab, коммиты, PR |
