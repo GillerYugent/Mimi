@@ -17,7 +17,7 @@
 | auth-service | ✅ готов | Регистрация, вход, JWT access/refresh, bcrypt, профиль |
 | users-service | ✅ готов | My Space, публичные профили, поиск по email, batch-lookup |
 | projects-service | ✅ готов | CRUD проектов, архив/восстановление, Redis-кэш списка (TTL 60с) |
-| tasks-service | ⏳ | Задачи, Kanban, подзадачи, метки |
+| tasks-service | ✅ готов | CRUD задач, подзадачи, метки, фильтры, stats, Pub/Sub событий |
 | docs-service | ⏳ | Страницы, блоки, вложенность, история |
 | boards-service | ⏳ | Канвасы (JSONB) |
 | teams-service | ⏳ | Команды, роли, права |

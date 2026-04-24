@@ -186,6 +186,24 @@ services:
         condition: service_healthy
     networks: [mimi-net]
 
+  tasks-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: tasks-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: tasks-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-tasks:5432/mimi_tasks?sslmode=disable
+    depends_on:
+      postgres-tasks:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [mimi-net]
+
   # ─── Gateway ─────────────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
@@ -198,6 +216,7 @@ services:
       - auth-service
       - users-service
       - projects-service
+      - tasks-service
     networks: [mimi-net]
 
 volumes:
