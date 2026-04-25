@@ -258,6 +258,24 @@ services:
         condition: service_healthy
     networks: [mimi-net]
 
+  git-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: git-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: git-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-git:5432/mimi_git?sslmode=disable
+    depends_on:
+      postgres-git:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [mimi-net]
+
   # ─── Gateway ─────────────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
@@ -274,6 +292,7 @@ services:
       - docs-service
       - boards-service
       - teams-service
+      - git-service
     networks: [mimi-net]
 
 volumes:

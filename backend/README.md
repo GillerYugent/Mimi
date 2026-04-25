@@ -21,7 +21,7 @@
 | docs-service | ✅ готов | Страницы c JSONB-блоками, вложенность, версии, поиск, восстановление |
 | boards-service | ✅ готов | Канвасы со SVG-элементами в JSONB, scope project/my_space |
 | teams-service | ✅ готов | Команды, произвольные роли с правами, члены, приглашения по email |
-| git-service | ⏳ | OAuth GitHub/GitLab, коммиты, PR |
+| git-service | ✅ готов | GitHub/GitLab по PAT, fetch коммитов и PR с Redis-кэшем 60с |
 | notifications-service | ⏳ | SSE + Redis Pub/Sub |
 
 ## Быстрый старт
