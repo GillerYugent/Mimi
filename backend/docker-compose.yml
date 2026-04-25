@@ -276,6 +276,24 @@ services:
         condition: service_healthy
     networks: [mimi-net]
 
+  notifications-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: notifications-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: notifications-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-notifications:5432/mimi_notifications?sslmode=disable
+    depends_on:
+      postgres-notifications:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [mimi-net]
+
   # ─── Gateway ─────────────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
@@ -293,6 +311,7 @@ services:
       - boards-service
       - teams-service
       - git-service
+      - notifications-service
     networks: [mimi-net]
 
 volumes:

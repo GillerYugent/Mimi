@@ -22,7 +22,7 @@
 | boards-service | ✅ готов | Канвасы со SVG-элементами в JSONB, scope project/my_space |
 | teams-service | ✅ готов | Команды, произвольные роли с правами, члены, приглашения по email |
 | git-service | ✅ готов | GitHub/GitLab по PAT, fetch коммитов и PR с Redis-кэшем 60с |
-| notifications-service | ⏳ | SSE + Redis Pub/Sub |
+| notifications-service | ✅ готов | Redis Pub/Sub consumer + SSE-стрим клиенту, REST CRUD уведомлений |
 
 ## Быстрый старт
 
