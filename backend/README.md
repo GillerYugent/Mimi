@@ -19,7 +19,7 @@
 | projects-service | ✅ готов | CRUD проектов, архив/восстановление, Redis-кэш списка (TTL 60с) |
 | tasks-service | ✅ готов | CRUD задач, подзадачи, метки, фильтры, stats, Pub/Sub событий |
 | docs-service | ✅ готов | Страницы c JSONB-блоками, вложенность, версии, поиск, восстановление |
-| boards-service | ⏳ | Канвасы (JSONB) |
+| boards-service | ✅ готов | Канвасы со SVG-элементами в JSONB, scope project/my_space |
 | teams-service | ⏳ | Команды, роли, права |
 | git-service | ⏳ | OAuth GitHub/GitLab, коммиты, PR |
 | notifications-service | ⏳ | SSE + Redis Pub/Sub |

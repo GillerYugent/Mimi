@@ -222,6 +222,24 @@ services:
         condition: service_healthy
     networks: [mimi-net]
 
+  boards-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: boards-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: boards-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-boards:5432/mimi_boards?sslmode=disable
+    depends_on:
+      postgres-boards:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [mimi-net]
+
   # ─── Gateway ─────────────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
@@ -236,6 +254,7 @@ services:
       - projects-service
       - tasks-service
       - docs-service
+      - boards-service
     networks: [mimi-net]
 
 volumes:
