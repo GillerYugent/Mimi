@@ -240,6 +240,24 @@ services:
         condition: service_healthy
     networks: [mimi-net]
 
+  teams-service:
+    <<: *service-defaults
+    build:
+      context: .
+      dockerfile: docker/service.Dockerfile
+      args:
+        SERVICE: teams-service
+    environment:
+      <<: *service-env
+      SERVICE_NAME: teams-service
+      DATABASE_URL: postgres://mimi:mimi@postgres-teams:5432/mimi_teams?sslmode=disable
+    depends_on:
+      postgres-teams:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [mimi-net]
+
   # ─── Gateway ─────────────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
@@ -255,6 +273,7 @@ services:
       - tasks-service
       - docs-service
       - boards-service
+      - teams-service
     networks: [mimi-net]
 
 volumes:

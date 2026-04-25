@@ -20,7 +20,7 @@
 | tasks-service | ✅ готов | CRUD задач, подзадачи, метки, фильтры, stats, Pub/Sub событий |
 | docs-service | ✅ готов | Страницы c JSONB-блоками, вложенность, версии, поиск, восстановление |
 | boards-service | ✅ готов | Канвасы со SVG-элементами в JSONB, scope project/my_space |
-| teams-service | ⏳ | Команды, роли, права |
+| teams-service | ✅ готов | Команды, произвольные роли с правами, члены, приглашения по email |
 | git-service | ⏳ | OAuth GitHub/GitLab, коммиты, PR |
 | notifications-service | ⏳ | SSE + Redis Pub/Sub |
 
