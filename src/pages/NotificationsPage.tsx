@@ -15,8 +15,8 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 export function NotificationsPage() {
-  const user = useAuth((s) => s.currentUser())
-  const items = useNotifications((s) => (user ? s.byUser(user.id) : []))
+  const user = useAuth((s) => s.user)
+  const items = useNotifications((s) => s.items)
   const markAllRead = useNotifications((s) => s.markAllRead)
   const markRead = useNotifications((s) => s.markRead)
   const clearRead = useNotifications((s) => s.clearRead)
@@ -31,10 +31,10 @@ export function NotificationsPage() {
         breadcrumbs={<span className="px-1.5 font-medium text-ink">Уведомления</span>}
         actions={
           <>
-            <button className="btn btn-ghost text-xs" onClick={() => markAllRead(user.id)}>
+            <button className="btn btn-ghost text-xs" onClick={() => markAllRead()}>
               Отметить всё прочитанным
             </button>
-            <button className="btn btn-ghost text-xs" onClick={() => clearRead(user.id)}>
+            <button className="btn btn-ghost text-xs" onClick={() => clearRead()}>
               Очистить прочитанные
             </button>
           </>

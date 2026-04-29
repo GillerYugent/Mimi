@@ -17,10 +17,19 @@ const TABS: Array<{ id: Tab; label: string; icon: JSX.Element }> = [
 ]
 
 export function MySpacePage() {
-  const user = useAuth((s) => s.currentUser())
+  const user = useAuth((s) => s.user)
+  const mySpaceId = useAuth((s) => s.mySpaceId)
   const [tab, setTab] = useState<Tab>('notes')
 
   if (!user) return <Navigate to="/login" replace />
+  if (!mySpaceId) {
+    return (
+      <Layout>
+        <Topbar breadcrumbs={<span className="px-1.5 text-ink-light">Подготовка My Space…</span>} />
+        <div className="flex-1" />
+      </Layout>
+    )
+  }
 
   return (
     <Layout>
@@ -40,9 +49,9 @@ export function MySpacePage() {
         ))}
       </div>
       <div className="flex-1 overflow-hidden">
-        {tab === 'notes' && <DocsPane scope={{ mySpaceOwnerId: user.id }} />}
-        {tab === 'tasks' && <MySpaceTasks userId={user.id} />}
-        {tab === 'canvases' && <BoardsPane scope={{ mySpaceOwnerId: user.id }} />}
+        {tab === 'notes' && <DocsPane scope={{ mySpaceId }} />}
+        {tab === 'tasks' && <MySpaceTasks userId={user.id} mySpaceId={mySpaceId} />}
+        {tab === 'canvases' && <BoardsPane scope={{ mySpaceId }} />}
       </div>
     </Layout>
   )

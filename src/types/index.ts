@@ -102,7 +102,7 @@ export interface DocPage {
   title: string
   icon?: string
   projectId?: ID
-  mySpaceOwnerId?: ID
+  mySpaceId?: ID
   parentPageId?: ID
   blocks: Block[]
   createdAt: ISODate
@@ -140,7 +140,7 @@ export interface Canvas {
   id: ID
   title: string
   projectId?: ID
-  mySpaceOwnerId?: ID
+  mySpaceId?: ID
   elements: CanvasElement[]
   createdAt: ISODate
   updatedAt: ISODate
@@ -213,12 +213,14 @@ export interface Commit {
   message: string
   author: string
   date: ISODate
+  url?: string
 }
 
 export interface PullRequest {
   number: number
   title: string
   author: string
-  status: 'open' | 'merged' | 'closed'
+  status: string
   createdAt: ISODate
+  url?: string
 }

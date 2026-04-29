@@ -4,19 +4,22 @@ import { useAuth } from '@/store/authStore'
 import { Input } from '@/components/ui/Input'
 
 export function LoginPage() {
-  const session = useAuth((s) => s.session)
+  const user = useAuth((s) => s.user)
   const login = useAuth((s) => s.login)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  if (session) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/" replace />
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    const res = login({ email, password })
+    setLoading(true)
+    const res = await login({ email, password })
+    setLoading(false)
     if (!res.ok) setError(res.error)
     else navigate('/', { replace: true })
   }
@@ -53,8 +56,8 @@ export function LoginPage() {
             required
           />
           {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <button type="submit" className="btn btn-primary w-full py-2">
-            Войти
+          <button type="submit" className="btn btn-primary w-full py-2" disabled={loading}>
+            {loading ? 'Входим...' : 'Войти'}
           </button>
         </form>
 

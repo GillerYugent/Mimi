@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ID } from '@/types'
+import type { ID, Task } from '@/types'
 import { useTasks } from '@/store/taskStore'
 import { useProjects } from '@/store/projectStore'
 import { useAuth } from '@/store/authStore'
@@ -7,46 +7,58 @@ import { Input, Textarea } from '@/components/ui/Input'
 import { IconCheck, IconPlus, IconTrash } from '@/components/ui/Icon'
 import { formatFullDate, formatDateInput } from '@/utils/date'
 
-// My Space "personal tasks": we model them as tasks pinned to a dedicated virtual project
-// unique per user — `my-space-{userId}`. That gives us full Kanban semantics for free
-// without changing the task model.
+const MY_SPACE_TITLE = 'My Space'
+const MY_SPACE_ICON = '⭐'
 
-function ensureMySpaceProject(userId: ID) {
-  const list = useProjects.getState().projects
-  if (list.some((p) => p.id === `my-space-${userId}`)) return
-  const now = new Date().toISOString()
-  const p = {
-    id: `my-space-${userId}`,
-    title: 'My Space',
+// На бэке у нас единый формат — задачи привязаны к project_id. Поэтому
+// для личного пространства мы лениво создаём (или находим) проект с
+// особым названием/иконкой и используем его id для задач.
+async function ensureMySpaceProject(): Promise<string> {
+  const projects = useProjects.getState()
+  const found = Object.values(projects.projects).find(
+    (p) => p.title === MY_SPACE_TITLE && p.icon === MY_SPACE_ICON
+  )
+  if (found) return found.id
+  const created = await projects.createProject({
+    title: MY_SPACE_TITLE,
     description: 'Личные задачи',
-    ownerId: userId,
-    status: 'active' as const,
-    icon: '⭐',
-    createdAt: now,
-    updatedAt: now,
-  }
-  useProjects.setState({ projects: [p, ...list] })
+    icon: MY_SPACE_ICON,
+  })
+  return created.id
 }
 
-export function MySpaceTasks({ userId }: { userId: ID }) {
-  useEffect(() => {
-    ensureMySpaceProject(userId)
-  }, [userId])
+interface Props {
+  userId: ID
+  /** ID my_space.id — здесь не используется напрямую, но передаётся ради
+   * консистентности и того, что в будущем здесь могут появиться запросы,
+   * специфичные для my_space-scope. */
+  mySpaceId: ID
+}
 
-  const projectId = `my-space-${userId}`
-  const tasks = useTasks((s) => s.byProject(projectId))
+export function MySpaceTasks({ userId }: Props) {
+  const [projectId, setProjectId] = useState<string | null>(null)
+  const tasks = useTasks((s) => (projectId ? s.byProject(projectId) : []))
+  const loadByProject = useTasks((s) => s.loadByProject)
   const createTask = useTasks((s) => s.createTask)
   const updateTask = useTasks((s) => s.updateTask)
   const deleteTask = useTasks((s) => s.deleteTask)
-  const user = useAuth((s) => s.currentUser())
+  const user = useAuth((s) => s.user)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [deadline, setDeadline] = useState('')
 
-  const add = () => {
-    if (!title.trim() || !user) return
-    createTask({
+  useEffect(() => {
+    void (async () => {
+      const id = await ensureMySpaceProject()
+      setProjectId(id)
+      void loadByProject(id)
+    })()
+  }, [userId])
+
+  const add = async () => {
+    if (!title.trim() || !user || !projectId) return
+    await createTask({
       projectId,
       title,
       description,
@@ -57,6 +69,12 @@ export function MySpaceTasks({ userId }: { userId: ID }) {
     setTitle('')
     setDescription('')
     setDeadline('')
+  }
+
+  if (!projectId) {
+    return (
+      <div className="mx-auto max-w-2xl px-8 py-10 text-sm text-ink-light">Подготовка…</div>
+    )
   }
 
   const active = tasks.filter((t) => t.status !== 'done')
@@ -85,7 +103,11 @@ export function MySpaceTasks({ userId }: { userId: ID }) {
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
           />
-          <button className="btn btn-primary ml-auto text-sm" onClick={add} disabled={!title.trim()}>
+          <button
+            className="btn btn-primary ml-auto text-sm"
+            onClick={add}
+            disabled={!title.trim()}
+          >
             <IconPlus size={14} /> Добавить
           </button>
         </div>
@@ -96,7 +118,9 @@ export function MySpaceTasks({ userId }: { userId: ID }) {
           Активные · {active.length}
         </h3>
         <div className="space-y-1">
-          {active.length === 0 && <div className="py-3 text-sm text-ink-light">Нет активных задач</div>}
+          {active.length === 0 && (
+            <div className="py-3 text-sm text-ink-light">Нет активных задач</div>
+          )}
           {active.map((t) => (
             <TaskRow
               key={t.id}
@@ -136,7 +160,7 @@ function TaskRow({
   onDelete,
   onUpdateDeadline,
 }: {
-  task: ReturnType<typeof useTasks.getState>['tasks'][number]
+  task: Task
   onToggle: () => void
   onDelete: () => void
   onUpdateDeadline?: (iso: string | undefined) => void
@@ -155,7 +179,9 @@ function TaskRow({
         {done && <IconCheck size={10} />}
       </button>
       <div className="min-w-0 flex-1">
-        <div className={`text-sm ${done ? 'text-ink-lighter line-through' : 'text-ink'}`}>{task.title}</div>
+        <div className={`text-sm ${done ? 'text-ink-lighter line-through' : 'text-ink'}`}>
+          {task.title}
+        </div>
         {task.description && <div className="mt-0.5 text-xs text-ink-light">{task.description}</div>}
         {task.deadline && (
           <div className={`mt-0.5 text-[11px] ${overdue ? 'text-red-600' : 'text-ink-lighter'}`}>
@@ -168,7 +194,9 @@ function TaskRow({
           type="date"
           className="input w-auto py-0.5 text-xs opacity-0 transition-opacity group-hover:opacity-100"
           value={formatDateInput(task.deadline)}
-          onChange={(e) => onUpdateDeadline(e.target.value ? new Date(e.target.value).toISOString() : undefined)}
+          onChange={(e) =>
+            onUpdateDeadline(e.target.value ? new Date(e.target.value).toISOString() : undefined)
+          }
         />
       )}
       <button

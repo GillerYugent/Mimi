@@ -15,7 +15,7 @@ const PREF_LABELS: Array<{ key: keyof NotificationPrefs; label: string; hint: st
 ]
 
 export function SettingsPage() {
-  const user = useAuth((s) => s.currentUser())
+  const user = useAuth((s) => s.user)
   const updateProfile = useAuth((s) => s.updateProfile)
   const changePassword = useAuth((s) => s.changePassword)
   const updateNotificationPrefs = useAuth((s) => s.updateNotificationPrefs)
@@ -32,16 +32,16 @@ export function SettingsPage() {
 
   if (!user) return <Navigate to="/login" replace />
 
-  const saveProfile = () => {
-    updateProfile({ name: name.trim(), email: email.trim().toLowerCase(), avatarUrl })
+  const saveProfile = async () => {
+    await updateProfile({ name: name.trim(), email: email.trim().toLowerCase(), avatarUrl })
     setSaved('Сохранено')
     setTimeout(() => setSaved(null), 2000)
   }
 
-  const doChangePassword = () => {
+  const doChangePassword = async () => {
     setPwError(null)
     setPwOk(false)
-    const res = changePassword(currentPass, newPass)
+    const res = await changePassword(currentPass, newPass)
     if (!res.ok) setPwError(res.error)
     else {
       setCurrentPass('')
@@ -136,10 +136,10 @@ export function SettingsPage() {
 
           <Section title="О приложении" subtitle="">
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <Row k="Версия" v="1.0.0 MVP" />
-              <Row k="Хранение" v="Локально (localStorage)" />
-              <Row k="Auth" v="JWT (demo, 15 мин / 7 дней)" />
-              <Row k="Password hashing" v="bcrypt-style (demo)" />
+              <Row k="Версия" v="1.0.0" />
+              <Row k="Хранение" v="PostgreSQL (per-service)" />
+              <Row k="Auth" v="JWT (15 мин / 7 дней)" />
+              <Row k="Password hashing" v="bcrypt cost ≥ 12" />
             </div>
           </Section>
         </div>

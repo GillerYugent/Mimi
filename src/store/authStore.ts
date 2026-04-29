@@ -1,157 +1,167 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { User, Session, NotificationPrefs } from '@/types'
-import { fakeHash, verifyFakeHash, fakeJwt, uid } from '@/utils/id'
-
-const ACCESS_TOKEN_TTL = 15 * 60 * 1000 // 15 min (per ТЗ)
-const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60 * 1000 // 7 days
-
-const DEFAULT_PREFS: NotificationPrefs = {
-  taskAssigned: true,
-  taskStatusChanged: true,
-  teamInvited: true,
-  mentionedInDoc: true,
-}
+import type { NotificationPrefs, User } from '@/types'
+import { authApi } from '@/api/auth'
+import { usersApi, type PublicUser } from '@/api/users'
+import { ApiError, getTokens, setTokens } from '@/api/client'
 
 interface AuthState {
-  users: User[]
-  session: Session | null
-  register: (input: { name: string; email: string; password: string }) => { ok: true } | { ok: false; error: string }
-  login: (input: { email: string; password: string }) => { ok: true } | { ok: false; error: string }
-  logout: () => void
-  refresh: () => void
-  updateProfile: (updates: Partial<Pick<User, 'name' | 'avatarUrl' | 'email'>>) => void
-  changePassword: (current: string, next: string) => { ok: true } | { ok: false; error: string }
-  updateNotificationPrefs: (prefs: Partial<NotificationPrefs>) => void
+  // Текущий пользователь — единственный «полный» User.
+  user: User | null
+  // Кэш публичных профилей других пользователей (для assignee, members и т.д.).
+  publicUsers: Record<string, PublicUser>
+  // Identity My Space (PK таблицы my_spaces в users-service).
+  mySpaceId: string | null
+
+  bootstrapping: boolean
+
+  // Bootstrap — вызывается при старте приложения, если есть refresh-токен.
+  bootstrap: () => Promise<void>
+
+  register: (input: { name: string; email: string; password: string }) =>
+    Promise<{ ok: true } | { ok: false; error: string }>
+  login: (input: { email: string; password: string }) =>
+    Promise<{ ok: true } | { ok: false; error: string }>
+  logout: () => Promise<void>
+
+  updateProfile: (updates: Partial<Pick<User, 'name' | 'avatarUrl' | 'email'>>) => Promise<void>
+  changePassword: (current: string, next: string) =>
+    Promise<{ ok: true } | { ok: false; error: string }>
+  updateNotificationPrefs: (prefs: Partial<NotificationPrefs>) => Promise<void>
+
+  // Получить публичный профиль (с кэшем).
+  fetchUser: (id: string) => Promise<PublicUser | undefined>
+  fetchUsers: (ids: string[]) => Promise<void>
+  searchUsers: (q: string) => Promise<PublicUser[]>
+
+  // Обратная совместимость: возвращают данные синхронно из кэша.
   currentUser: () => User | undefined
   getUser: (id: string) => User | undefined
-  // Used when inviting people not yet registered:
-  upsertPlaceholderUser: (email: string, name?: string) => User
 }
 
-export const useAuth = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      users: [],
-      session: null,
+export const useAuth = create<AuthState>((set, get) => ({
+  user: null,
+  publicUsers: {},
+  mySpaceId: null,
+  bootstrapping: !!getTokens(),
 
-      register: ({ name, email, password }) => {
-        const email_n = email.trim().toLowerCase()
-        if (!email_n || !password || !name) return { ok: false, error: 'Заполните все поля' }
-        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email_n)) return { ok: false, error: 'Некорректный email' }
-        if (password.length < 6) return { ok: false, error: 'Пароль должен быть не короче 6 символов' }
-        if (get().users.some((u) => u.email === email_n)) return { ok: false, error: 'Email уже занят' }
+  bootstrap: async () => {
+    if (!getTokens()) {
+      set({ bootstrapping: false })
+      return
+    }
+    try {
+      const [me, ms] = await Promise.all([authApi.me(), usersApi.mySpace()])
+      set({ user: me, mySpaceId: ms.id })
+    } catch {
+      setTokens(null)
+      set({ user: null, mySpaceId: null })
+    } finally {
+      set({ bootstrapping: false })
+    }
+  },
 
-        const user: User = {
-          id: uid('u'),
-          name: name.trim(),
-          email: email_n,
-          passwordHash: fakeHash(password),
-          createdAt: new Date().toISOString(),
-          notificationPrefs: { ...DEFAULT_PREFS },
-        }
-        const now = Date.now()
-        const session: Session = {
-          userId: user.id,
-          accessToken: fakeJwt({ sub: user.id }, ACCESS_TOKEN_TTL),
-          refreshToken: fakeJwt({ sub: user.id, type: 'refresh' }, REFRESH_TOKEN_TTL),
-          issuedAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + ACCESS_TOKEN_TTL).toISOString(),
-        }
-        set({ users: [...get().users, user], session })
-        return { ok: true }
+  register: async (input) => {
+    try {
+      const u = await authApi.register(input)
+      const ms = await usersApi.mySpace()
+      set({ user: u, mySpaceId: ms.id })
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: errorMessage(e) }
+    }
+  },
+
+  login: async (input) => {
+    try {
+      const u = await authApi.login(input)
+      const ms = await usersApi.mySpace()
+      set({ user: u, mySpaceId: ms.id })
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: errorMessage(e) }
+    }
+  },
+
+  logout: async () => {
+    const t = getTokens()
+    if (t) await authApi.logout(t.refreshToken)
+    set({ user: null, mySpaceId: null, publicUsers: {} })
+  },
+
+  updateProfile: async (updates) => {
+    const u = await authApi.updateProfile(updates)
+    set({ user: u })
+  },
+
+  changePassword: async (current, next) => {
+    try {
+      await authApi.changePassword(current, next)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: errorMessage(e) }
+    }
+  },
+
+  updateNotificationPrefs: async (prefs) => {
+    await authApi.updateNotificationPrefs(prefs)
+    const u = get().user
+    if (!u) return
+    set({ user: { ...u, notificationPrefs: { ...u.notificationPrefs, ...prefs } } })
+  },
+
+  fetchUser: async (id) => {
+    if (!id) return undefined
+    const cached = get().publicUsers[id]
+    if (cached) return cached
+    try {
+      const u = await usersApi.byId(id)
+      set({ publicUsers: { ...get().publicUsers, [id]: u } })
+      return u
+    } catch {
+      return undefined
+    }
+  },
+
+  fetchUsers: async (ids) => {
+    const missing = ids.filter((id) => id && !get().publicUsers[id])
+    if (missing.length === 0) return
+    try {
+      const users = await usersApi.batch(missing)
+      const next = { ...get().publicUsers }
+      for (const u of users) next[u.id] = u
+      set({ publicUsers: next })
+    } catch {
+      // ignore
+    }
+  },
+
+  searchUsers: (q) => usersApi.search(q),
+
+  currentUser: () => get().user ?? undefined,
+  getUser: (id) => {
+    const me = get().user
+    if (me && me.id === id) return me
+    const p = get().publicUsers[id]
+    if (!p) return undefined
+    return {
+      id: p.id,
+      name: p.name,
+      email: p.email,
+      avatarUrl: p.avatarUrl,
+      passwordHash: '',
+      createdAt: p.createdAt,
+      notificationPrefs: {
+        taskAssigned: true,
+        taskStatusChanged: true,
+        teamInvited: true,
+        mentionedInDoc: true,
       },
+    }
+  },
+}))
 
-      login: ({ email, password }) => {
-        const email_n = email.trim().toLowerCase()
-        const user = get().users.find((u) => u.email === email_n)
-        if (!user || !verifyFakeHash(password, user.passwordHash)) {
-          return { ok: false, error: 'Неверный email или пароль' }
-        }
-        const now = Date.now()
-        const session: Session = {
-          userId: user.id,
-          accessToken: fakeJwt({ sub: user.id }, ACCESS_TOKEN_TTL),
-          refreshToken: fakeJwt({ sub: user.id, type: 'refresh' }, REFRESH_TOKEN_TTL),
-          issuedAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + ACCESS_TOKEN_TTL).toISOString(),
-        }
-        set({ session })
-        return { ok: true }
-      },
-
-      logout: () => set({ session: null }),
-
-      refresh: () => {
-        const s = get().session
-        if (!s) return
-        const now = Date.now()
-        set({
-          session: {
-            ...s,
-            accessToken: fakeJwt({ sub: s.userId }, ACCESS_TOKEN_TTL),
-            issuedAt: new Date(now).toISOString(),
-            expiresAt: new Date(now + ACCESS_TOKEN_TTL).toISOString(),
-          },
-        })
-      },
-
-      updateProfile: (updates) => {
-        const s = get().session
-        if (!s) return
-        set({
-          users: get().users.map((u) => (u.id === s.userId ? { ...u, ...updates } : u)),
-        })
-      },
-
-      changePassword: (current, next) => {
-        const s = get().session
-        if (!s) return { ok: false, error: 'Не авторизован' }
-        const user = get().users.find((u) => u.id === s.userId)
-        if (!user) return { ok: false, error: 'Пользователь не найден' }
-        if (!verifyFakeHash(current, user.passwordHash)) return { ok: false, error: 'Текущий пароль неверен' }
-        if (next.length < 6) return { ok: false, error: 'Пароль должен быть не короче 6 символов' }
-        set({
-          users: get().users.map((u) => (u.id === user.id ? { ...u, passwordHash: fakeHash(next) } : u)),
-        })
-        return { ok: true }
-      },
-
-      updateNotificationPrefs: (prefs) => {
-        const s = get().session
-        if (!s) return
-        set({
-          users: get().users.map((u) =>
-            u.id === s.userId ? { ...u, notificationPrefs: { ...u.notificationPrefs, ...prefs } } : u
-          ),
-        })
-      },
-
-      currentUser: () => {
-        const s = get().session
-        if (!s) return undefined
-        return get().users.find((u) => u.id === s.userId)
-      },
-
-      getUser: (id) => get().users.find((u) => u.id === id),
-
-      upsertPlaceholderUser: (email, name) => {
-        const email_n = email.trim().toLowerCase()
-        const existing = get().users.find((u) => u.email === email_n)
-        if (existing) return existing
-        const user: User = {
-          id: uid('u'),
-          name: name?.trim() || email_n.split('@')[0],
-          email: email_n,
-          // placeholder: not logged-in-able until they actually register
-          passwordHash: fakeHash(uid()),
-          createdAt: new Date().toISOString(),
-          notificationPrefs: { ...DEFAULT_PREFS },
-        }
-        set({ users: [...get().users, user] })
-        return user
-      },
-    }),
-    { name: 'mimi.auth' }
-  )
-)
+function errorMessage(e: unknown): string {
+  if (e instanceof ApiError) return e.message || 'Ошибка'
+  if (e instanceof Error) return e.message
+  return 'Ошибка'
+}

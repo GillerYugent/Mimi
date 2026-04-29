@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import type { ID } from '@/types'
 import { useProjects } from '@/store/projectStore'
 import { useTasks } from '@/store/taskStore'
@@ -17,13 +18,32 @@ export function OverviewPane({ projectId }: Props) {
   const updateProject = useProjects((s) => s.updateProject)
   const stats = useTasks((s) => s.stats(projectId))
   const tasks = useTasks((s) => s.byProject(projectId))
-  const docs = useDocs((s) => s.pages.filter((p) => p.projectId === projectId))
+  const docs = useDocs((s) =>
+    Object.values(s.pages).filter((p) => p.projectId === projectId)
+  )
   const canvases = useBoards((s) => s.list({ projectId }))
   const team = useTeams((s) => (project?.teamId ? s.getTeam(project.teamId) : undefined))
-  const members = useTeams((s) => (team ? s.membersByTeam(team.id) : []))
+  const members = useTeams((s) => (team ? s.membersOf(team.id) : []))
   const getUser = useAuth((s) => s.getUser)
 
+  // Debounced autosave для title и description.
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const descTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   if (!project) return null
+
+  const onChangeTitle = (v: string) => {
+    if (titleTimer.current) clearTimeout(titleTimer.current)
+    titleTimer.current = setTimeout(() => {
+      void updateProject(projectId, { title: v })
+    }, 400)
+  }
+  const onChangeDescription = (v: string) => {
+    if (descTimer.current) clearTimeout(descTimer.current)
+    descTimer.current = setTimeout(() => {
+      void updateProject(projectId, { description: v })
+    }, 400)
+  }
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-6">
@@ -34,8 +54,8 @@ export function OverviewPane({ projectId }: Props) {
         <div className="flex-1">
           <input
             className="title-serif w-full border-none bg-transparent text-3xl font-bold tracking-tight text-ink outline-none"
-            value={project.title}
-            onChange={(e) => updateProject(projectId, { title: e.target.value })}
+            defaultValue={project.title}
+            onChange={(e) => onChangeTitle(e.target.value)}
           />
           <div className="mt-1 text-xs text-ink-lighter">
             Создан {formatRelative(project.createdAt)} · Обновлён {formatRelative(project.updatedAt)}
@@ -54,8 +74,8 @@ export function OverviewPane({ projectId }: Props) {
         <h3 className="mb-1 text-sm font-semibold text-ink">Описание</h3>
         <Textarea
           rows={4}
-          value={project.description}
-          onChange={(e) => updateProject(projectId, { description: e.target.value })}
+          defaultValue={project.description}
+          onChange={(e) => onChangeDescription(e.target.value)}
           placeholder="О чём этот проект? Цели, контекст, ссылки..."
         />
       </section>

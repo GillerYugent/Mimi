@@ -1,4 +1,4 @@
-import { DragEvent, useMemo, useState } from 'react'
+import { DragEvent, useEffect, useMemo, useState } from 'react'
 import type { ID, Task, TaskStatus } from '@/types'
 import { useTasks } from '@/store/taskStore'
 import { useAuth } from '@/store/authStore'
@@ -16,9 +16,22 @@ const COLUMNS: Array<{ id: TaskStatus; title: string }> = [
 
 export function KanbanBoard({ projectId, memberIds }: { projectId: ID; memberIds?: ID[] }) {
   const allTasks = useTasks((s) => s.byProject(projectId))
+  const loadByProject = useTasks((s) => s.loadByProject)
   const moveTask = useTasks((s) => s.moveTask)
   const createTask = useTasks((s) => s.createTask)
   const getUser = useAuth((s) => s.getUser)
+  const fetchUsers = useAuth((s) => s.fetchUsers)
+
+  // Загружаем задачи проекта при первом маунте.
+  useEffect(() => {
+    void loadByProject(projectId)
+  }, [projectId])
+
+  // Прокачиваем кэш профилей для исполнителей, которые мы видим в задачах.
+  useEffect(() => {
+    const ids = Array.from(new Set(allTasks.map((t) => t.assigneeId).filter(Boolean) as string[]))
+    if (ids.length > 0) void fetchUsers(ids)
+  }, [allTasks])
 
   const [search, setSearch] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState<ID | ''>('')
@@ -46,15 +59,15 @@ export function KanbanBoard({ projectId, memberIds }: { projectId: ID; memberIds
     return map
   }, [filtered])
 
-  const onDrop = (status: TaskStatus) => {
-    if (dragged) moveTask(dragged, status, Date.now())
+  const onDrop = async (status: TaskStatus) => {
+    if (dragged) await moveTask(dragged, status, Date.now())
     setDragged(null)
     setDragOver(null)
   }
 
-  const onQuickCreate = (status: TaskStatus, title: string) => {
+  const onQuickCreate = async (status: TaskStatus, title: string) => {
     if (!title.trim()) return
-    createTask({ projectId, title, status })
+    await createTask({ projectId, title, status })
     setCreating(null)
   }
 

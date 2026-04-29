@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import type { ID } from '@/types'
+import { useEffect, useState } from 'react'
+import type { Commit, ID, PullRequest } from '@/types'
 import { useProjects } from '@/store/projectStore'
+import { gitApi } from '@/api/git'
 import { formatRelative } from '@/utils/date'
 import { IconGit, IconLink } from '@/components/ui/Icon'
 import { Confirm } from '@/components/ui/Modal'
@@ -11,23 +12,79 @@ interface Props {
 
 export function GitPane({ projectId }: Props) {
   const project = useProjects((s) => s.getProject(projectId))
+  const loadGitRepo = useProjects((s) => s.loadGitRepo)
   const connectGit = useProjects((s) => s.connectGit)
   const disconnectGit = useProjects((s) => s.disconnectGit)
-  const commits = useProjects((s) => (project?.gitRepo ? s.getMockCommits(project.gitRepo.url) : []))
-  const prs = useProjects((s) => (project?.gitRepo ? s.getMockPullRequests(project.gitRepo.url) : []))
+
+  const [repoMeta, setRepoMeta] = useState<{ id: string } | null>(null)
+  const [commits, setCommits] = useState<Commit[]>([])
+  const [prs, setPrs] = useState<PullRequest[]>([])
 
   const [url, setUrl] = useState('https://github.com/GillerYugent/Mimi')
   const [provider, setProvider] = useState<'github' | 'gitlab'>('github')
+  const [accessToken, setAccessToken] = useState('')
   const [confirmDisc, setConfirmDisc] = useState(false)
+  const [connecting, setConnecting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loadingFeed, setLoadingFeed] = useState(false)
+
+  // 1) Грузим привязку репозитория из git-service.
+  useEffect(() => {
+    void (async () => {
+      const r = await loadGitRepo(projectId)
+      setRepoMeta(r ? { id: r.id } : null)
+    })()
+  }, [projectId])
+
+  // 2) Если репо подключён — грузим коммиты и PR.
+  useEffect(() => {
+    if (!repoMeta?.id) return
+    setLoadingFeed(true)
+    void (async () => {
+      try {
+        const [c, p] = await Promise.all([
+          gitApi.commits(repoMeta.id),
+          gitApi.pullRequests(repoMeta.id),
+        ])
+        setCommits(c)
+        setPrs(p)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Не удалось загрузить данные')
+      } finally {
+        setLoadingFeed(false)
+      }
+    })()
+  }, [repoMeta?.id])
 
   if (!project) return null
 
-  const onConnect = () => {
+  const onConnect = async () => {
     if (!url.trim()) return
-    connectGit(projectId, { url: url.trim(), provider })
+    setConnecting(true)
+    setError(null)
+    try {
+      const r = await connectGit(projectId, {
+        url: url.trim(),
+        provider,
+        accessToken: accessToken.trim() || undefined,
+      })
+      setRepoMeta({ id: r.id })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось подключить репозиторий')
+    } finally {
+      setConnecting(false)
+    }
   }
 
-  if (!project.gitRepo) {
+  const onDisconnect = async () => {
+    if (!repoMeta) return
+    await disconnectGit(projectId, repoMeta.id)
+    setRepoMeta(null)
+    setCommits([])
+    setPrs([])
+  }
+
+  if (!project.gitRepo || !repoMeta) {
     return (
       <div className="mx-auto max-w-2xl px-8 py-10">
         <div className="rounded-md border border-dashed border-line bg-paper-soft p-8 text-center">
@@ -36,7 +93,8 @@ export function GitPane({ projectId }: Props) {
           </div>
           <h3 className="text-base font-semibold text-ink">Подключить репозиторий</h3>
           <p className="mx-auto mt-1 max-w-sm text-sm text-ink-light">
-            Подключите GitHub или GitLab, чтобы видеть коммиты и pull requests рядом с задачами.
+            Подключите GitHub или GitLab — git-service будет тянуть коммиты и Pull Requests
+            рядом с задачами.
           </p>
           <div className="mx-auto mt-4 max-w-md space-y-2 text-left">
             <div className="flex gap-2">
@@ -55,11 +113,25 @@ export function GitPane({ projectId }: Props) {
                 placeholder="https://github.com/owner/repo"
               />
             </div>
-            <button className="btn btn-primary w-full text-sm" onClick={onConnect}>
-              <IconLink size={14} /> Подключить через OAuth (demo)
+            <input
+              className="input"
+              type="password"
+              value={accessToken}
+              onChange={(e) => setAccessToken(e.target.value)}
+              placeholder="Personal Access Token (опционально, нужен для приватных репо)"
+            />
+            {error && (
+              <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>
+            )}
+            <button
+              className="btn btn-primary w-full text-sm"
+              onClick={onConnect}
+              disabled={connecting}
+            >
+              <IconLink size={14} /> {connecting ? 'Подключение…' : 'Подключить'}
             </button>
             <p className="text-center text-[11px] text-ink-lighter">
-              В MVP используются моковые данные коммитов и PR для демонстрации.
+              git-service проверит доступ запросом 1 коммита перед сохранением.
             </p>
           </div>
         </div>
@@ -91,13 +163,23 @@ export function GitPane({ projectId }: Props) {
         </button>
       </div>
 
-      {/* PRs */}
       <section className="mb-8">
-        <h3 className="mb-2 text-sm font-semibold text-ink">Открытые Pull Requests · {prs.length}</h3>
+        <h3 className="mb-2 text-sm font-semibold text-ink">
+          Открытые Pull Requests · {prs.length}
+        </h3>
         <div className="divide-y divide-line rounded-md border border-line bg-paper">
-          {prs.length === 0 && <div className="px-4 py-3 text-sm text-ink-light">Нет открытых PR</div>}
+          {loadingFeed && <div className="px-4 py-3 text-sm text-ink-light">Загрузка…</div>}
+          {!loadingFeed && prs.length === 0 && (
+            <div className="px-4 py-3 text-sm text-ink-light">Нет открытых PR</div>
+          )}
           {prs.map((pr) => (
-            <div key={pr.number} className="flex items-center gap-3 px-4 py-2">
+            <a
+              key={pr.number}
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-paper-hover"
+            >
               <span className="chip">#{pr.number}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium text-ink">{pr.title}</div>
@@ -106,17 +188,27 @@ export function GitPane({ projectId }: Props) {
                 </div>
               </div>
               <span className="chip">{pr.status}</span>
-            </div>
+            </a>
           ))}
         </div>
       </section>
 
-      {/* Commits */}
       <section>
-        <h3 className="mb-2 text-sm font-semibold text-ink">Последние коммиты · {commits.length}</h3>
+        <h3 className="mb-2 text-sm font-semibold text-ink">
+          Последние коммиты · {commits.length}
+        </h3>
         <div className="divide-y divide-line rounded-md border border-line bg-paper">
+          {loadingFeed && commits.length === 0 && (
+            <div className="px-4 py-3 text-sm text-ink-light">Загрузка…</div>
+          )}
           {commits.map((c) => (
-            <div key={c.sha} className="flex items-center gap-3 px-4 py-2">
+            <a
+              key={c.sha}
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-paper-hover"
+            >
               <code className="rounded bg-paper-soft px-1.5 py-0.5 font-mono text-xs text-ink-light">
                 {c.sha.slice(0, 7)}
               </code>
@@ -126,7 +218,7 @@ export function GitPane({ projectId }: Props) {
                   {c.author} · {formatRelative(c.date)}
                 </div>
               </div>
-            </div>
+            </a>
           ))}
         </div>
       </section>
@@ -134,7 +226,7 @@ export function GitPane({ projectId }: Props) {
       <Confirm
         open={confirmDisc}
         onClose={() => setConfirmDisc(false)}
-        onConfirm={() => disconnectGit(projectId)}
+        onConfirm={onDisconnect}
         title="Отключить репозиторий?"
         message="Связь с внешним репозиторием будет удалена, но задачи и документы сохранятся."
         destructive
@@ -143,3 +235,4 @@ export function GitPane({ projectId }: Props) {
     </div>
   )
 }
+

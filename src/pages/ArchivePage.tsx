@@ -9,8 +9,8 @@ import { useState } from 'react'
 import { Confirm } from '@/components/ui/Modal'
 
 export function ArchivePage() {
-  const user = useAuth((s) => s.currentUser())
-  const archived = useProjects((s) => (user ? s.listArchived(user.id) : []))
+  const user = useAuth((s) => s.user)
+  const archived = useProjects((s) => s.listArchived())
   const restore = useProjects((s) => s.restoreProject)
   const remove = useProjects((s) => s.deleteProject)
   const navigate = useNavigate()
@@ -45,8 +45,8 @@ export function ArchivePage() {
                   </div>
                   <div
                     className="min-w-0 flex-1 cursor-pointer"
-                    onClick={() => {
-                      restore(p.id)
+                    onClick={async () => {
+                      await restore(p.id)
                       navigate(`/project/${p.id}`)
                     }}
                   >
@@ -57,8 +57,8 @@ export function ArchivePage() {
                   </div>
                   <button
                     className="btn btn-outline text-xs"
-                    onClick={() => {
-                      restore(p.id)
+                    onClick={async () => {
+                      await restore(p.id)
                       navigate(`/project/${p.id}`)
                     }}
                   >
@@ -81,8 +81,8 @@ export function ArchivePage() {
       <Confirm
         open={!!pendingDelete}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => {
-          if (pendingDelete) remove(pendingDelete)
+        onConfirm={async () => {
+          if (pendingDelete) await remove(pendingDelete)
         }}
         title="Удалить проект навсегда?"
         message="Задачи, документы и канвасы этого проекта будут удалены безвозвратно."

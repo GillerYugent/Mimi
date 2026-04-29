@@ -35,15 +35,22 @@ export function Sidebar() {
 
   if (!user) return null
 
-  const onCreate = () => {
+  const [creating, setCreating] = useState(false)
+
+  const onCreate = async () => {
     const t = title.trim()
-    if (!t) return
-    const p = createProject({ ownerId: user.id, title: t, description, icon })
-    setShowNew(false)
-    setTitle('')
-    setDescription('')
-    setIcon('📁')
-    navigate(`/project/${p.id}`)
+    if (!t || creating) return
+    setCreating(true)
+    try {
+      const p = await createProject({ title: t, description, icon })
+      setShowNew(false)
+      setTitle('')
+      setDescription('')
+      setIcon('📁')
+      navigate(`/project/${p.id}`)
+    } finally {
+      setCreating(false)
+    }
   }
 
   const isActive = (path: string) => loc.pathname === path
@@ -77,7 +84,14 @@ export function Sidebar() {
                 Настройки аккаунта
               </DropdownItem>
               <DropdownDivider />
-              <DropdownItem icon={<IconLogout />} onClick={() => { close(); logout(); navigate('/login') }}>
+              <DropdownItem
+                icon={<IconLogout />}
+                onClick={async () => {
+                  close()
+                  await logout()
+                  navigate('/login')
+                }}
+              >
                 Выйти
               </DropdownItem>
             </>

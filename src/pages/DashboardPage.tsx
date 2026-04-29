@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Layout } from '@/components/layout/Layout'
 import { Topbar } from '@/components/layout/Topbar'
 import { useAuth } from '@/store/authStore'
@@ -8,9 +9,17 @@ import { formatRelative } from '@/utils/date'
 import { IconFolder, IconPlus } from '@/components/ui/Icon'
 
 export function DashboardPage() {
-  const user = useAuth((s) => s.currentUser())
-  const projects = useProjects((s) => (user ? s.listActive(user.id) : []))
+  const user = useAuth((s) => s.user)
+  const projects = useProjects((s) => s.listActive())
+  const loadStats = useTasks((s) => s.loadStats)
   const stats = useTasks((s) => s.stats)
+
+  // Прогрузим stats для каждого проекта в фоне.
+  useEffect(() => {
+    for (const p of projects) {
+      void loadStats(p.id)
+    }
+  }, [projects.length])
 
   if (!user) return <Navigate to="/login" replace />
 

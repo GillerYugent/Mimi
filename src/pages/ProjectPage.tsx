@@ -4,7 +4,10 @@ import { Crumb, CrumbSep, Topbar } from '@/components/layout/Topbar'
 import { useProjects } from '@/store/projectStore'
 import { useAuth } from '@/store/authStore'
 import { useTeams } from '@/store/teamStore'
-import { useMemo, useState } from 'react'
+import { useTasks } from '@/store/taskStore'
+import { useDocs } from '@/store/docStore'
+import { useBoards } from '@/store/boardStore'
+import { useEffect, useMemo, useState } from 'react'
 import { OverviewPane } from '@/components/project/OverviewPane'
 import { KanbanBoard } from '@/components/tasks/KanbanBoard'
 import { DocsPane } from '@/components/docs/DocsPane'
@@ -29,17 +32,37 @@ const TABS: Array<{ id: Tab; label: string; icon: JSX.Element }> = [
 export function ProjectPage() {
   const { id } = useParams<{ id: string }>()
   const project = useProjects((s) => (id ? s.getProject(id) : undefined))
+  const loadProject = useProjects((s) => s.loadOne)
+  const loadGitRepo = useProjects((s) => s.loadGitRepo)
   const archiveProject = useProjects((s) => s.archiveProject)
+  const restoreProject = useProjects((s) => s.restoreProject)
   const deleteProject = useProjects((s) => s.deleteProject)
-  const user = useAuth((s) => s.currentUser())
+  const user = useAuth((s) => s.user)
   const team = useTeams((s) => (project?.teamId ? s.getTeam(project.teamId) : undefined))
-  const members = useTeams((s) => (team ? s.membersByTeam(team.id) : []))
+  const members = useTeams((s) => (team ? s.membersOf(team.id) : []))
+
+  const loadTasks = useTasks((s) => s.loadByProject)
+  const loadStats = useTasks((s) => s.loadStats)
+  const loadRoots = useDocs((s) => s.loadRoots)
+  const loadCanvases = useBoards((s) => s.loadList)
 
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
 
   const navigate = useNavigate()
+
+  // Подгружаем недостающие данные проекта при заходе.
+  useEffect(() => {
+    if (!id) return
+    if (!project) void loadProject(id)
+    void loadTasks(id)
+    void loadStats(id)
+    void loadRoots({ projectId: id })
+    void loadCanvases({ projectId: id })
+    void loadGitRepo(id)
+  }, [id])
+
   const memberIds = useMemo(() => {
     if (!user) return []
     const ids = new Set<string>([user.id])
@@ -48,7 +71,14 @@ export function ProjectPage() {
   }, [members, user])
 
   if (!user) return <Navigate to="/login" replace />
-  if (!project) return <Navigate to="/" replace />
+  if (!project) {
+    return (
+      <Layout>
+        <Topbar breadcrumbs={<span className="px-1.5 text-ink-light">Загрузка...</span>} />
+        <div className="flex-1" />
+      </Layout>
+    )
+  }
 
   return (
     <Layout>
@@ -96,7 +126,6 @@ export function ProjectPage() {
         }
       />
 
-      {/* Tab bar */}
       <div className="flex shrink-0 items-center gap-1 border-b border-line bg-paper px-4">
         {TABS.map((t) => (
           <button
@@ -126,11 +155,11 @@ export function ProjectPage() {
       <Confirm
         open={confirmArchive}
         onClose={() => setConfirmArchive(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (project.status === 'archived') {
-            useProjects.getState().restoreProject(project.id)
+            await restoreProject(project.id)
           } else {
-            archiveProject(project.id)
+            await archiveProject(project.id)
             navigate('/')
           }
         }}
@@ -145,8 +174,8 @@ export function ProjectPage() {
       <Confirm
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        onConfirm={() => {
-          deleteProject(project.id)
+        onConfirm={async () => {
+          await deleteProject(project.id)
           navigate('/')
         }}
         title="Удалить проект навсегда?"

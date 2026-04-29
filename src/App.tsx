@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { LoginPage } from '@/pages/LoginPage'
 import { RegisterPage } from '@/pages/RegisterPage'
@@ -8,16 +9,48 @@ import { NotificationsPage } from '@/pages/NotificationsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { ArchivePage } from '@/pages/ArchivePage'
 import { useAuth } from '@/store/authStore'
-import { useNotificationEffects } from '@/hooks/useNotificationEffects'
+import { useProjects } from '@/store/projectStore'
+import { useNotifications } from '@/store/notificationStore'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const session = useAuth((s) => s.session)
-  if (!session) return <Navigate to="/login" replace />
+  const user = useAuth((s) => s.user)
+  const bootstrapping = useAuth((s) => s.bootstrapping)
+  if (bootstrapping) return <SplashScreen />
+  if (!user) return <Navigate to="/login" replace />
   return children
 }
 
+function SplashScreen() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-paper-soft">
+      <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-ink text-paper">
+        <span className="title-serif text-2xl font-bold leading-none">m</span>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
-  useNotificationEffects()
+  const bootstrap = useAuth((s) => s.bootstrap)
+  const user = useAuth((s) => s.user)
+  const loadProjects = useProjects((s) => s.loadAll)
+  const loadNotifications = useNotifications((s) => s.load)
+  const startStream = useNotifications((s) => s.startStream)
+  const stopStream = useNotifications((s) => s.stopStream)
+
+  // 1) bootstrap session при старте
+  useEffect(() => {
+    void bootstrap()
+  }, [bootstrap])
+
+  // 2) при появлении пользователя — подгружаем проекты + уведомления + SSE
+  useEffect(() => {
+    if (!user) return
+    void loadProjects()
+    void loadNotifications()
+    startStream()
+    return () => stopStream()
+  }, [user?.id])
 
   return (
     <Routes>

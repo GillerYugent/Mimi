@@ -1,203 +1,195 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { ID, Invitation, Role, RolePermissions, Team, TeamMember } from '@/types'
-import { uid } from '@/utils/id'
-
-const DEFAULT_PERMS: RolePermissions = {
-  canViewDocs: true,
-  canEditDocs: true,
-  canViewTasks: true,
-  canEditTasks: true,
-  canViewBoards: true,
-  canEditBoards: true,
-  canManageTeam: false,
-}
+import type { Invitation, Role, RolePermissions, Team, TeamMember } from '@/types'
+import { teamsApi } from '@/api/teams'
 
 interface TeamState {
-  teams: Team[]
-  roles: Role[]
-  members: TeamMember[]
-  invitations: Invitation[]
+  teams: Record<string, Team>
+  rolesByTeamCache: Record<string, string[]>
+  rolesById: Record<string, Role>
+  membersByTeam: Record<string, TeamMember[]>
+  invitationsByTeamCache: Record<string, Invitation[]>
 
-  createTeam: (input: { name: string; ownerId: ID }) => Team
-  renameTeam: (teamId: ID, name: string) => void
-  deleteTeam: (teamId: ID) => void
-  getTeam: (id: ID) => Team | undefined
-  teamsByUser: (userId: ID) => Team[]
+  loadAll: () => Promise<void>
+  loadTeam: (teamId: string) => Promise<void>
 
-  createRole: (teamId: ID, name: string, perms?: Partial<RolePermissions>) => Role
-  updateRolePerms: (roleId: ID, perms: Partial<RolePermissions>) => void
-  deleteRole: (roleId: ID) => void
-  rolesByTeam: (teamId: ID) => Role[]
-  getRole: (id: ID) => Role | undefined
+  createTeam: (input: { name: string; ownerId?: string }) => Promise<Team>
+  renameTeam: (teamId: string, name: string) => Promise<void>
+  deleteTeam: (teamId: string) => Promise<void>
+  getTeam: (id: string) => Team | undefined
+  teamsByUser: (userId?: string) => Team[]
 
-  addMember: (teamId: ID, userId: ID, roleId?: ID) => void
-  removeMember: (teamId: ID, userId: ID) => void
-  setMemberRole: (teamId: ID, userId: ID, roleId: ID | undefined) => void
-  membersByTeam: (teamId: ID) => TeamMember[]
-  memberOf: (teamId: ID, userId: ID) => TeamMember | undefined
+  createRole: (teamId: string, name: string, perms?: Partial<RolePermissions>) => Promise<Role>
+  updateRole: (roleId: string, updates: { name?: string; permissions?: Partial<RolePermissions> }) => Promise<void>
+  updateRolePerms: (roleId: string, perms: Partial<RolePermissions>) => Promise<void>
+  deleteRole: (roleId: string) => Promise<void>
+  rolesByTeam: (teamId: string) => Role[]
+  getRole: (id: string) => Role | undefined
 
-  createInvitation: (input: { teamId: ID; email: string; invitedBy: ID }) => Invitation
-  acceptInvitation: (id: ID, userId: ID) => void
-  declineInvitation: (id: ID) => void
-  invitationsByTeam: (teamId: ID) => Invitation[]
-  invitationsForUser: (email: string) => Invitation[]
+  setMemberRole: (teamId: string, userId: string, roleId: string | undefined) => Promise<void>
+  removeMember: (teamId: string, userId: string) => Promise<void>
+  // addMember больше не вызывается напрямую — flow через invitations
+  addMember: (teamId: string, userId: string, roleId?: string) => Promise<void>
+  membersOf: (teamId: string) => TeamMember[]
+  memberOf: (teamId: string, userId: string) => TeamMember | undefined
+
+  createInvitation: (input: { teamId: string; email: string; invitedBy?: string }) => Promise<Invitation>
+  acceptInvitation: (id: string, email: string) => Promise<void>
+  declineInvitation: (id: string, email: string) => Promise<void>
+  invitationsByTeam: (teamId: string) => Invitation[]
+  invitationsForUser: (email: string) => Promise<Invitation[]>
+
+  reset: () => void
 }
 
-const PRESET_ROLES: Array<{ name: string; perms?: Partial<RolePermissions> }> = [
-  { name: 'Backend', perms: {} },
-  { name: 'Frontend', perms: {} },
-  { name: 'Designer', perms: { canEditTasks: false } },
-  { name: 'QA', perms: { canEditDocs: false, canEditBoards: false } },
-]
+export const useTeams = create<TeamState>((set, get) => ({
+  teams: {},
+  rolesByTeamCache: {},
+  rolesById: {},
+  membersByTeam: {},
+  invitationsByTeamCache: {},
 
-export const useTeams = create<TeamState>()(
-  persist(
-    (set, get) => ({
-      teams: [],
-      roles: [],
-      members: [],
-      invitations: [],
+  loadAll: async () => {
+    const list = await teamsApi.list()
+    const map: Record<string, Team> = {}
+    for (const t of list) map[t.id] = t
+    set({ teams: map })
+  },
 
-      createTeam: ({ name, ownerId }) => {
-        const now = new Date().toISOString()
-        const team: Team = {
-          id: uid('team'),
-          name: name.trim() || 'Моя команда',
-          ownerId,
-          memberIds: [ownerId],
-          createdAt: now,
-        }
-        set({ teams: [...get().teams, team] })
-        // Owner joins as member
-        set({ members: [...get().members, { teamId: team.id, userId: ownerId, joinedAt: now }] })
-        // Create preset roles
-        for (const pr of PRESET_ROLES) {
-          get().createRole(team.id, pr.name, pr.perms)
-        }
-        return team
+  loadTeam: async (teamId) => {
+    const [team, roles, members, invitations] = await Promise.all([
+      teamsApi.byId(teamId),
+      teamsApi.roles(teamId),
+      teamsApi.members(teamId),
+      teamsApi.invitations(teamId).catch(() => [] as Invitation[]),
+    ])
+    const rolesById = { ...get().rolesById }
+    for (const r of roles) rolesById[r.id] = r
+    set({
+      teams: { ...get().teams, [team.id]: team },
+      rolesByTeamCache: { ...get().rolesByTeamCache, [teamId]: roles.map((r) => r.id) },
+      rolesById,
+      membersByTeam: { ...get().membersByTeam, [teamId]: members },
+      invitationsByTeamCache: { ...get().invitationsByTeamCache, [teamId]: invitations },
+    })
+  },
+
+  createTeam: async ({ name }) => {
+    const t = await teamsApi.create(name)
+    set({ teams: { ...get().teams, [t.id]: t } })
+    await get().loadTeam(t.id)
+    return t
+  },
+
+  renameTeam: async (teamId, name) => {
+    const t = await teamsApi.rename(teamId, name)
+    set({ teams: { ...get().teams, [teamId]: t } })
+  },
+
+  deleteTeam: async (teamId) => {
+    await teamsApi.delete(teamId)
+    const teams = { ...get().teams }
+    delete teams[teamId]
+    set({ teams })
+  },
+
+  getTeam: (id) => get().teams[id],
+  teamsByUser: () => Object.values(get().teams),
+
+  createRole: async (teamId, name, perms) => {
+    const r = await teamsApi.createRole(teamId, name, perms)
+    set({
+      rolesById: { ...get().rolesById, [r.id]: r },
+      rolesByTeamCache: {
+        ...get().rolesByTeamCache,
+        [teamId]: [...(get().rolesByTeamCache[teamId] || []), r.id],
       },
+    })
+    return r
+  },
 
-      renameTeam: (teamId, name) => {
-        set({
-          teams: get().teams.map((t) => (t.id === teamId ? { ...t, name: name || 'Без названия' } : t)),
-        })
+  updateRole: async (roleId, updates) => {
+    const r = await teamsApi.updateRole(roleId, updates)
+    set({ rolesById: { ...get().rolesById, [roleId]: r } })
+  },
+
+  updateRolePerms: async (roleId, perms) => {
+    const r = await teamsApi.updateRole(roleId, { permissions: perms })
+    set({ rolesById: { ...get().rolesById, [roleId]: r } })
+  },
+
+  deleteRole: async (roleId) => {
+    await teamsApi.deleteRole(roleId)
+    const role = get().rolesById[roleId]
+    const rolesById = { ...get().rolesById }
+    delete rolesById[roleId]
+    const rolesByTeamCache = { ...get().rolesByTeamCache }
+    if (role) {
+      rolesByTeamCache[role.teamId] = (rolesByTeamCache[role.teamId] || []).filter((x) => x !== roleId)
+    }
+    set({ rolesById, rolesByTeamCache })
+  },
+
+  rolesByTeam: (teamId) => (get().rolesByTeamCache[teamId] || []).map((id) => get().rolesById[id]).filter(Boolean),
+  getRole: (id) => get().rolesById[id],
+
+  addMember: async () => {
+    // На бэке прямого "добавить участника по userID" нет — flow через invitations.accept.
+    // Метод оставлен для совместимости; ничего не делает.
+  },
+
+  removeMember: async (teamId, userId) => {
+    await teamsApi.removeMember(teamId, userId)
+    set({
+      membersByTeam: {
+        ...get().membersByTeam,
+        [teamId]: (get().membersByTeam[teamId] || []).filter((m) => m.userId !== userId),
       },
+    })
+  },
 
-      deleteTeam: (teamId) => {
-        set({
-          teams: get().teams.filter((t) => t.id !== teamId),
-          roles: get().roles.filter((r) => r.teamId !== teamId),
-          members: get().members.filter((m) => m.teamId !== teamId),
-          invitations: get().invitations.filter((i) => i.teamId !== teamId),
-        })
+  setMemberRole: async (teamId, userId, roleId) => {
+    const m = await teamsApi.setMemberRole(teamId, userId, roleId ?? null)
+    set({
+      membersByTeam: {
+        ...get().membersByTeam,
+        [teamId]: (get().membersByTeam[teamId] || []).map((x) =>
+          x.userId === userId ? m : x
+        ),
       },
+    })
+  },
 
-      getTeam: (id) => get().teams.find((t) => t.id === id),
+  membersOf: (teamId) => get().membersByTeam[teamId] || [],
+  memberOf: (teamId, userId) => (get().membersByTeam[teamId] || []).find((m) => m.userId === userId),
 
-      teamsByUser: (userId) =>
-        get().teams.filter((t) => t.memberIds.includes(userId) || t.ownerId === userId),
-
-      createRole: (teamId, name, perms) => {
-        const role: Role = {
-          id: uid('role'),
-          teamId,
-          name: name.trim() || 'Роль',
-          permissions: { ...DEFAULT_PERMS, ...perms },
-        }
-        set({ roles: [...get().roles, role] })
-        return role
+  createInvitation: async ({ teamId, email }) => {
+    const inv = await teamsApi.invite(teamId, email)
+    set({
+      invitationsByTeamCache: {
+        ...get().invitationsByTeamCache,
+        [teamId]: [inv, ...(get().invitationsByTeamCache[teamId] || [])],
       },
+    })
+    return inv
+  },
 
-      updateRolePerms: (roleId, perms) => {
-        set({
-          roles: get().roles.map((r) =>
-            r.id === roleId ? { ...r, permissions: { ...r.permissions, ...perms } } : r
-          ),
-        })
-      },
+  acceptInvitation: async (id, email) => {
+    await teamsApi.accept(id, email)
+  },
 
-      deleteRole: (roleId) => {
-        set({
-          roles: get().roles.filter((r) => r.id !== roleId),
-          members: get().members.map((m) => (m.roleId === roleId ? { ...m, roleId: undefined } : m)),
-        })
-      },
+  declineInvitation: async (id, email) => {
+    await teamsApi.decline(id, email)
+  },
 
-      rolesByTeam: (teamId) => get().roles.filter((r) => r.teamId === teamId),
+  invitationsByTeam: (teamId) => get().invitationsByTeamCache[teamId] || [],
+  invitationsForUser: (email) => teamsApi.pendingForEmail(email),
 
-      getRole: (id) => get().roles.find((r) => r.id === id),
-
-      addMember: (teamId, userId, roleId) => {
-        const existing = get().members.find((m) => m.teamId === teamId && m.userId === userId)
-        if (existing) return
-        set({
-          members: [...get().members, { teamId, userId, roleId, joinedAt: new Date().toISOString() }],
-          teams: get().teams.map((t) =>
-            t.id === teamId && !t.memberIds.includes(userId)
-              ? { ...t, memberIds: [...t.memberIds, userId] }
-              : t
-          ),
-        })
-      },
-
-      removeMember: (teamId, userId) => {
-        set({
-          members: get().members.filter((m) => !(m.teamId === teamId && m.userId === userId)),
-          teams: get().teams.map((t) =>
-            t.id === teamId ? { ...t, memberIds: t.memberIds.filter((id) => id !== userId) } : t
-          ),
-        })
-      },
-
-      setMemberRole: (teamId, userId, roleId) => {
-        set({
-          members: get().members.map((m) =>
-            m.teamId === teamId && m.userId === userId ? { ...m, roleId } : m
-          ),
-        })
-      },
-
-      membersByTeam: (teamId) => get().members.filter((m) => m.teamId === teamId),
-
-      memberOf: (teamId, userId) =>
-        get().members.find((m) => m.teamId === teamId && m.userId === userId),
-
-      createInvitation: ({ teamId, email, invitedBy }) => {
-        const inv: Invitation = {
-          id: uid('inv'),
-          teamId,
-          email: email.trim().toLowerCase(),
-          status: 'pending',
-          invitedBy,
-          createdAt: new Date().toISOString(),
-        }
-        set({ invitations: [...get().invitations, inv] })
-        return inv
-      },
-
-      acceptInvitation: (id, userId) => {
-        const inv = get().invitations.find((i) => i.id === id)
-        if (!inv) return
-        set({
-          invitations: get().invitations.map((i) => (i.id === id ? { ...i, status: 'accepted' } : i)),
-        })
-        get().addMember(inv.teamId, userId)
-      },
-
-      declineInvitation: (id) => {
-        set({
-          invitations: get().invitations.map((i) => (i.id === id ? { ...i, status: 'declined' } : i)),
-        })
-      },
-
-      invitationsByTeam: (teamId) => get().invitations.filter((i) => i.teamId === teamId),
-
-      invitationsForUser: (email) => {
-        const e = email.trim().toLowerCase()
-        return get().invitations.filter((i) => i.email === e && i.status === 'pending')
-      },
+  reset: () =>
+    set({
+      teams: {},
+      rolesByTeamCache: {},
+      rolesById: {},
+      membersByTeam: {},
+      invitationsByTeamCache: {},
     }),
-    { name: 'mimi.teams' }
-  )
-)
+}))

@@ -48,8 +48,8 @@ export function TaskModal({ task, onClose, memberIds }: Props) {
   const [commitSha, setCommitSha] = useState(task.commitSha || '')
   const [pullRequestUrl, setPullRequestUrl] = useState(task.pullRequestUrl || '')
 
-  const save = () => {
-    updateTask(task.id, {
+  const save = async () => {
+    await updateTask(task.id, {
       title: title.trim() || task.title,
       description,
       status,
@@ -71,9 +71,9 @@ export function TaskModal({ task, onClose, memberIds }: Props) {
   }
   const removeLabel = (l: string) => setLabels(labels.filter((x) => x !== l))
 
-  const addSubtask = () => {
+  const addSubtask = async () => {
     if (!subTitle.trim()) return
-    createTask({ projectId: task.projectId, parentTaskId: task.id, title: subTitle })
+    await createTask({ projectId: task.projectId, parentTaskId: task.id, title: subTitle })
     setSubTitle('')
   }
 
@@ -92,9 +92,9 @@ export function TaskModal({ task, onClose, memberIds }: Props) {
         <>
           <button
             className="btn btn-danger mr-auto text-sm"
-            onClick={() => {
+            onClick={async () => {
               if (confirm('Удалить задачу и все подзадачи?')) {
-                deleteTask(task.id)
+                await deleteTask(task.id)
                 onClose()
               }
             }}

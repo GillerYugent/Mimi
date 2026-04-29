@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ID, Role, RolePermissions } from '@/types'
 import { useTeams } from '@/store/teamStore'
 import { useAuth } from '@/store/authStore'
 import { useProjects } from '@/store/projectStore'
-import { useNotifications } from '@/store/notificationStore'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { IconPlus, IconTrash, IconUsers } from '@/components/ui/Icon'
@@ -24,63 +23,77 @@ interface Props {
 
 export function TeamPane({ projectId }: Props) {
   const project = useProjects((s) => s.getProject(projectId))
-  const user = useAuth((s) => s.currentUser())
-  const upsertPlaceholder = useAuth((s) => s.upsertPlaceholderUser)
+  const updateProject = useProjects((s) => s.updateProject)
+  const user = useAuth((s) => s.user)
+  const fetchUsers = useAuth((s) => s.fetchUsers)
   const getUser = useAuth((s) => s.getUser)
 
-  const createTeam = useTeams((s) => s.createTeam)
-  const updateProject = useProjects((s) => s.updateProject)
   const team = useTeams((s) => (project?.teamId ? s.getTeam(project.teamId) : undefined))
-  const membersByTeam = useTeams((s) => s.membersByTeam)
+  const createTeam = useTeams((s) => s.createTeam)
+  const renameTeam = useTeams((s) => s.renameTeam)
+  const loadTeam = useTeams((s) => s.loadTeam)
+  const membersOf = useTeams((s) => s.membersOf)
   const rolesByTeam = useTeams((s) => s.rolesByTeam)
-  const addMember = useTeams((s) => s.addMember)
   const removeMember = useTeams((s) => s.removeMember)
   const setMemberRole = useTeams((s) => s.setMemberRole)
   const createRole = useTeams((s) => s.createRole)
+  const updateRole = useTeams((s) => s.updateRole)
   const updateRolePerms = useTeams((s) => s.updateRolePerms)
   const deleteRole = useTeams((s) => s.deleteRole)
   const createInvitation = useTeams((s) => s.createInvitation)
   const invitationsByTeam = useTeams((s) => s.invitationsByTeam)
-  const notify = useNotifications((s) => s.notify)
 
   const [inviteEmail, setInviteEmail] = useState('')
   const [newRoleName, setNewRoleName] = useState('')
   const [teamName, setTeamName] = useState('')
   const [editingRole, setEditingRole] = useState<Role | null>(null)
+  const [creatingTeam, setCreatingTeam] = useState(false)
 
-  // Auto-create a team on first open if none linked to the project.
+  // Авто-создание команды для проекта при первом открытии вкладки.
   useEffect(() => {
-    if (!project || !user || project.teamId) return
-    const t = createTeam({ name: `${project.title} team`, ownerId: user.id })
-    updateProject(project.id, { teamId: t.id })
-  }, [project?.id])
+    if (!project || !user) return
+    if (project.teamId) {
+      void loadTeam(project.teamId)
+      return
+    }
+    if (creatingTeam) return
+    setCreatingTeam(true)
+    void (async () => {
+      try {
+        const t = await createTeam({ name: `${project.title} team` })
+        await updateProject(project.id, { teamId: t.id })
+      } finally {
+        setCreatingTeam(false)
+      }
+    })()
+  }, [project?.id, project?.teamId])
 
-  if (!project || !user || !team) return null
+  // Прокачиваем кэш профилей участников.
+  const members = team ? membersOf(team.id) : []
+  useEffect(() => {
+    if (members.length) void fetchUsers(members.map((m) => m.userId))
+  }, [members.length])
 
-  const members = membersByTeam(team.id)
+  if (!project || !user) return null
+  if (!team) {
+    return (
+      <div className="mx-auto max-w-4xl px-8 py-6 text-sm text-ink-light">Создаём команду…</div>
+    )
+  }
+
   const roles = rolesByTeam(team.id)
   const pendingInvites = invitationsByTeam(team.id).filter((i) => i.status === 'pending')
 
-  const onInvite = () => {
+  const onInvite = async () => {
     const email = inviteEmail.trim().toLowerCase()
     if (!email) return
-    // If user with this email exists — add them as member directly; otherwise create invitation.
-    const invited = upsertPlaceholder(email)
-    createInvitation({ teamId: team.id, email, invitedBy: user.id })
-    addMember(team.id, invited.id)
-    notify({
-      userId: invited.id,
-      type: 'team_invited',
-      title: 'Вас пригласили в команду',
-      body: `${user.name} пригласил вас в «${team.name}»`,
-      link: `/project/${project.id}`,
-    })
+    await createInvitation({ teamId: team.id, email })
     setInviteEmail('')
   }
 
-  const onCreateRole = () => {
+  const onCreateRole = async () => {
     if (!newRoleName.trim()) return
-    createRole(team.id, newRoleName.trim())
+    await createRole(team.id, newRoleName.trim())
     setNewRoleName('')
   }
 
@@ -97,16 +110,15 @@ export function TeamPane({ projectId }: Props) {
             placeholder={team.name}
             value={teamName || team.name}
             onChange={(e) => setTeamName(e.target.value)}
-            onBlur={() => {
+            onBlur={async () => {
               if (teamName && teamName !== team.name) {
-                useTeams.getState().renameTeam(team.id, teamName)
+                await renameTeam(team.id, teamName)
               }
             }}
           />
         </div>
       </div>
 
-      {/* Invite */}
       <section className="mb-8 rounded-md border border-line bg-paper p-4">
         <div className="mb-2 text-sm font-semibold text-ink">Пригласить участника</div>
         <div className="flex gap-2">
@@ -117,10 +129,14 @@ export function TeamPane({ projectId }: Props) {
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') onInvite()
+              if (e.key === 'Enter') void onInvite()
             }}
           />
-          <button className="btn btn-primary text-sm" onClick={onInvite} disabled={!inviteEmail.trim()}>
+          <button
+            className="btn btn-primary text-sm"
+            onClick={onInvite}
+            disabled={!inviteEmail.trim()}
+          >
             <IconPlus size={14} /> Пригласить
           </button>
         </div>
@@ -131,7 +147,6 @@ export function TeamPane({ projectId }: Props) {
         )}
       </section>
 
-      {/* Members */}
       <section className="mb-8">
         <div className="mb-2 flex items-center gap-2">
           <IconUsers size={14} className="text-ink-light" />
@@ -149,7 +164,7 @@ export function TeamPane({ projectId }: Props) {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-ink">
-                    {u?.name || 'Неизвестный'} {isOwner && <span className="chip ml-1">владелец</span>}
+                    {u?.name || 'Участник'} {isOwner && <span className="chip ml-1">владелец</span>}
                   </div>
                   <div className="truncate text-xs text-ink-light">{u?.email}</div>
                 </div>
@@ -186,7 +201,6 @@ export function TeamPane({ projectId }: Props) {
         </div>
       </section>
 
-      {/* Roles */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-ink">Роли · {roles.length}</h3>
@@ -203,11 +217,7 @@ export function TeamPane({ projectId }: Props) {
                 onBlur={(e) => {
                   const next = e.target.value.trim()
                   if (next && next !== r.name) {
-                    useTeams.setState({
-                      roles: useTeams.getState().roles.map((x) =>
-                        x.id === r.id ? { ...x, name: next } : x
-                      ),
-                    })
+                    void updateRole(r.id, { name: next })
                   }
                 }}
               />
@@ -231,7 +241,7 @@ export function TeamPane({ projectId }: Props) {
             onChange={(e) => setNewRoleName(e.target.value)}
             placeholder="Название новой роли"
             onKeyDown={(e) => {
-              if (e.key === 'Enter') onCreateRole()
+              if (e.key === 'Enter') void onCreateRole()
             }}
             className="flex-1"
           />
@@ -250,7 +260,7 @@ export function TeamPane({ projectId }: Props) {
         {editingRole && (
           <div className="space-y-1">
             {PERMISSION_LABELS.map(({ key, label }) => {
-              const role = rolesByTeam(team.id).find((r) => r.id === editingRole.id)
+              const role = roles.find((r) => r.id === editingRole.id)
               if (!role) return null
               return (
                 <label

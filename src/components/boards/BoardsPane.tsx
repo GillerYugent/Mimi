@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ID } from '@/types'
 import { useBoards } from '@/store/boardStore'
 import { IconCanvas, IconPlus, IconTrash } from '@/components/ui/Icon'
@@ -7,22 +7,31 @@ import { formatRelative } from '@/utils/date'
 import { Confirm } from '@/components/ui/Modal'
 
 interface Props {
-  scope: { projectId?: ID; mySpaceOwnerId?: ID }
+  scope: { projectId?: ID; mySpaceId?: ID }
 }
 
 export function BoardsPane({ scope }: Props) {
   const list = useBoards((s) => s.list(scope))
+  const loadList = useBoards((s) => s.loadList)
   const createCanvas = useBoards((s) => s.createCanvas)
   const deleteCanvas = useBoards((s) => s.deleteCanvas)
   const getCanvas = useBoards((s) => s.getCanvas)
 
-  const [selectedId, setSelectedId] = useState<ID | null>(list[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<ID | null>(null)
   const [pendingDelete, setPendingDelete] = useState<ID | null>(null)
+
+  useEffect(() => {
+    void loadList(scope)
+  }, [scope.projectId, scope.mySpaceId])
+
+  useEffect(() => {
+    if (!selectedId && list[0]) setSelectedId(list[0].id)
+  }, [list.length, selectedId])
 
   const current = selectedId ? getCanvas(selectedId) : undefined
 
-  const onCreate = () => {
-    const c = createCanvas({ title: `Канвас ${list.length + 1}`, ...scope })
+  const onCreate = async () => {
+    const c = await createCanvas({ title: `Канвас ${list.length + 1}`, ...scope })
     setSelectedId(c.id)
   }
 
@@ -79,7 +88,7 @@ export function BoardsPane({ scope }: Props) {
               </div>
               <h3 className="text-base font-semibold text-ink">Создайте канвас</h3>
               <p className="mt-1 text-sm text-ink-light">
-                Визуализируйте архитектуру, stroymap или проведите brainstorm.
+                Визуализируйте архитектуру, roadmap или проведите brainstorm.
               </p>
               <button className="btn btn-primary mt-4 text-sm" onClick={onCreate}>
                 <IconPlus size={14} /> Новый канвас
@@ -92,9 +101,9 @@ export function BoardsPane({ scope }: Props) {
       <Confirm
         open={!!pendingDelete}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (pendingDelete) {
-            deleteCanvas(pendingDelete)
+            await deleteCanvas(pendingDelete)
             if (selectedId === pendingDelete) setSelectedId(null)
           }
         }}

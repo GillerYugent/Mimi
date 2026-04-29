@@ -4,20 +4,23 @@ import { useAuth } from '@/store/authStore'
 import { Input } from '@/components/ui/Input'
 
 export function RegisterPage() {
-  const session = useAuth((s) => s.session)
+  const user = useAuth((s) => s.user)
   const register = useAuth((s) => s.register)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const navigate = useNavigate()
 
-  if (session) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/" replace />
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
-    const res = register({ name, email, password })
+    setLoading(true)
+    const res = await register({ name, email, password })
+    setLoading(false)
     if (!res.ok) setError(res.error)
     else navigate('/', { replace: true })
   }
@@ -62,11 +65,11 @@ export function RegisterPage() {
             minLength={6}
           />
           {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
-          <button type="submit" className="btn btn-primary w-full py-2">
-            Зарегистрироваться
+          <button type="submit" className="btn btn-primary w-full py-2" disabled={loading}>
+            {loading ? 'Создаём...' : 'Зарегистрироваться'}
           </button>
           <p className="text-center text-xs text-ink-lighter">
-            Пароли хранятся в виде хэша. Данные — локально в вашем браузере.
+            Пароли хранятся как bcrypt-хэш на сервере. JWT access — 15 мин, refresh — 7 дней.
           </p>
         </form>
 
