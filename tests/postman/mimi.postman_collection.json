@@ -1,0 +1,303 @@
+{
+  "info": {
+    "name": "Mimi — TC-1…TC-10",
+    "description": "Тест-кейсы из практики 11 (TC-1…TC-10) и checklist'а функциональных требований. Запуск через Newman:\n\n  newman run tests/postman/mimi.postman_collection.json --env-var baseUrl=http://localhost:8080\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "rndEmail", "value": "" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "projectId", "value": "" },
+    { "key": "taskId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "TC-1: Регистрация пользователя (позитив)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.collectionVariables.set('rndEmail', 'tc_' + Math.random().toString(36).slice(2, 10) + '@mimi.test');"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const j = pm.response.json();",
+              "pm.test('access_token + refresh_token', () => {",
+              "  pm.expect(j.access_token).to.be.a('string').and.not.empty;",
+              "  pm.expect(j.refresh_token).to.be.a('string').and.not.empty;",
+              "});",
+              "pm.test('user.email совпадает', () => {",
+              "  pm.expect(j.user.email).to.eql(pm.collectionVariables.get('rndEmail'));",
+              "});",
+              "pm.collectionVariables.set('accessToken', j.access_token);",
+              "pm.collectionVariables.set('refreshToken', j.refresh_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Load Test\",\n  \"email\": \"{{rndEmail}}\",\n  \"password\": \"password123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-2: Регистрация с дублирующим email (негатив)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 409', () => pm.response.to.have.status(409));",
+              "const j = pm.response.json();",
+              "pm.test('code = email_taken', () => pm.expect(j.code).to.eql('email_taken'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Dup\",\n  \"email\": \"{{rndEmail}}\",\n  \"password\": \"password123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-3: Авторизация (позитив)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const j = pm.response.json();",
+              "pm.test('expires_in ≈ 900с (15 мин)', () => pm.expect(j.expires_in).to.be.within(800, 1000));",
+              "pm.collectionVariables.set('accessToken', j.access_token);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{rndEmail}}\",\n  \"password\": \"password123\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-4: Авторизация с неверным паролем (негатив)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+              "pm.test('код invalid_credentials', () => pm.expect(pm.response.json().code).to.eql('invalid_credentials'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{rndEmail}}\",\n  \"password\": \"WRONG\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-5: Создание проекта (позитив)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const j = pm.response.json();",
+              "pm.test('status = active', () => pm.expect(j.status).to.eql('active'));",
+              "pm.collectionVariables.set('projectId', j.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/projects",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"title\": \"TC-5 Project\",\n  \"description\": \"Created by Newman test\",\n  \"icon\": \"📁\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-6: Получить список проектов",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "const arr = pm.response.json();",
+              "pm.test('массив включает только что созданный проект', () => {",
+              "  const id = pm.collectionVariables.get('projectId');",
+              "  pm.expect(arr.some((p) => p.id === id)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": "{{baseUrl}}/api/projects?status=active"
+      }
+    },
+    {
+      "name": "TC-7: Создание задачи без названия (негатив)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 400', () => pm.response.to.have.status(400));",
+              "pm.test('код validation', () => pm.expect(pm.response.json().code).to.eql('validation'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/tasks",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"title\": \"\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-8: Создание задачи (позитив)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+              "const j = pm.response.json();",
+              "pm.test('status = backlog по умолчанию', () => pm.expect(j.status).to.eql('backlog'));",
+              "pm.collectionVariables.set('taskId', j.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/tasks",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"projectId\": \"{{projectId}}\",\n  \"title\": \"Implement login\",\n  \"priority\": \"high\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-9: Перенос задачи в другую колонку",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "pm.test('новый статус in_progress', () => pm.expect(pm.response.json().status).to.eql('in_progress'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/tasks/{{taskId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"in_progress\"\n}"
+        }
+      }
+    },
+    {
+      "name": "TC-10: Истёкший access-token отклоняется",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 401', () => pm.response.to.have.status(401));",
+              "pm.test('refresh-flow доступен (токен присутствует)', () => {",
+              "  pm.expect(pm.collectionVariables.get('refreshToken')).to.be.a('string').and.not.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ4IiwiZXhwIjoxfQ.deadbeef" }
+        ],
+        "url": "{{baseUrl}}/api/auth/me"
+      }
+    },
+    {
+      "name": "Cleanup: удалить тестовый проект",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('HTTP 204', () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+        "url": "{{baseUrl}}/api/projects/{{projectId}}"
+      }
+    }
+  ]
+}

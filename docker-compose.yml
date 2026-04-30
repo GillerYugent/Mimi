@@ -1,21 +1,24 @@
-# Mimi backend — полный стек по ТЗ (практика 7):
-#   • 8 изолированных PostgreSQL инстансов (Database per Service, кроме users
-#     которая общая для auth-service и users-service — как на диаграмме практики)
-#   • Redis 7 (кэш + Pub/Sub для notifications-service)
-#   • NGINX — API Gateway (маршрутизация, SSL-терминация, балансировка)
-#   • 9 микросервисов на Go
+# Корневой Compose-файл Mimi. Поднимает фронтенд + 9 микросервисов Go +
+# 8 инстансов PostgreSQL + Redis + NGINX gateway одной командой.
 #
-# В этом файле сейчас развёрнуты только инфра + auth-service. Остальные
-# сервисы будут добавлены в последующих шагах.
+# Структура:
+#   /                  — фронтенд (Dockerfile, docker/frontend.conf)
+#   /backend           — go-сервисы, миграции, gateway nginx, per-service Dockerfile
 #
-# Запуск:  docker compose up -d --build
-# Миграции прогоняются автоматически при старте каждого сервиса.
+# Порт наружу:
+#   :8080 — NGINX gateway, обслуживает / (SPA) и /api/* (микросервисы)
+#
+# Команды:
+#   docker compose up -d --build       # поднять всё
+#   docker compose down                # остановить
+#   docker compose logs -f             # хвост логов
+#   docker compose ps                  # статус сервисов
 
 name: mimi
 
 x-service-defaults: &service-defaults
   build:
-    context: .
+    context: ./backend
     dockerfile: docker/service.Dockerfile
   restart: unless-stopped
   environment: &service-env
@@ -40,7 +43,7 @@ x-postgres-defaults: &postgres-defaults
     retries: 20
 
 services:
-  # ─── Shared infrastructure ────────────────────────────────────────
+  # ─── Shared infrastructure ───────────────────────────────────────
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -54,7 +57,7 @@ services:
       retries: 20
     networks: [mimi-net]
 
-  # ─── Per-service PostgreSQL instances (Database per Service) ─────
+  # ─── Per-service PostgreSQL ──────────────────────────────────────
   postgres-users:
     <<: *postgres-defaults
     environment:
@@ -127,11 +130,11 @@ services:
     volumes: [pg-notifications:/var/lib/postgresql/data]
     networks: [mimi-net]
 
-  # ─── Microservices ───────────────────────────────────────────────
+  # ─── Microservices (Go) ──────────────────────────────────────────
   auth-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: auth-service
@@ -140,16 +143,14 @@ services:
       SERVICE_NAME: auth-service
       DATABASE_URL: postgres://mimi:mimi@postgres-users:5432/mimi_users?sslmode=disable
     depends_on:
-      postgres-users:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-users: { condition: service_healthy }
+      redis:          { condition: service_healthy }
     networks: [mimi-net]
 
   users-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: users-service
@@ -158,20 +159,15 @@ services:
       SERVICE_NAME: users-service
       DATABASE_URL: postgres://mimi:mimi@postgres-users:5432/mimi_users?sslmode=disable
     depends_on:
-      postgres-users:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      # auth-service мигрирует первым — это гарантирует наличие таблицы `users`
-      # к моменту, когда users-service будет запрашивать её.
-      auth-service:
-        condition: service_started
+      postgres-users: { condition: service_healthy }
+      redis:          { condition: service_healthy }
+      auth-service:   { condition: service_started }
     networks: [mimi-net]
 
   projects-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: projects-service
@@ -180,16 +176,14 @@ services:
       SERVICE_NAME: projects-service
       DATABASE_URL: postgres://mimi:mimi@postgres-projects:5432/mimi_projects?sslmode=disable
     depends_on:
-      postgres-projects:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-projects: { condition: service_healthy }
+      redis:             { condition: service_healthy }
     networks: [mimi-net]
 
   tasks-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: tasks-service
@@ -198,16 +192,14 @@ services:
       SERVICE_NAME: tasks-service
       DATABASE_URL: postgres://mimi:mimi@postgres-tasks:5432/mimi_tasks?sslmode=disable
     depends_on:
-      postgres-tasks:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-tasks: { condition: service_healthy }
+      redis:          { condition: service_healthy }
     networks: [mimi-net]
 
   docs-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: docs-service
@@ -216,16 +208,14 @@ services:
       SERVICE_NAME: docs-service
       DATABASE_URL: postgres://mimi:mimi@postgres-docs:5432/mimi_docs?sslmode=disable
     depends_on:
-      postgres-docs:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-docs: { condition: service_healthy }
+      redis:         { condition: service_healthy }
     networks: [mimi-net]
 
   boards-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: boards-service
@@ -234,16 +224,14 @@ services:
       SERVICE_NAME: boards-service
       DATABASE_URL: postgres://mimi:mimi@postgres-boards:5432/mimi_boards?sslmode=disable
     depends_on:
-      postgres-boards:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-boards: { condition: service_healthy }
+      redis:           { condition: service_healthy }
     networks: [mimi-net]
 
   teams-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: teams-service
@@ -252,16 +240,14 @@ services:
       SERVICE_NAME: teams-service
       DATABASE_URL: postgres://mimi:mimi@postgres-teams:5432/mimi_teams?sslmode=disable
     depends_on:
-      postgres-teams:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-teams: { condition: service_healthy }
+      redis:          { condition: service_healthy }
     networks: [mimi-net]
 
   git-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: git-service
@@ -270,16 +256,14 @@ services:
       SERVICE_NAME: git-service
       DATABASE_URL: postgres://mimi:mimi@postgres-git:5432/mimi_git?sslmode=disable
     depends_on:
-      postgres-git:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-git: { condition: service_healthy }
+      redis:        { condition: service_healthy }
     networks: [mimi-net]
 
   notifications-service:
     <<: *service-defaults
     build:
-      context: .
+      context: ./backend
       dockerfile: docker/service.Dockerfile
       args:
         SERVICE: notifications-service
@@ -288,21 +272,28 @@ services:
       SERVICE_NAME: notifications-service
       DATABASE_URL: postgres://mimi:mimi@postgres-notifications:5432/mimi_notifications?sslmode=disable
     depends_on:
-      postgres-notifications:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      postgres-notifications: { condition: service_healthy }
+      redis:                  { condition: service_healthy }
     networks: [mimi-net]
 
-  # ─── Gateway ─────────────────────────────────────────────────────
+  # ─── Frontend (React + Vite, отдаётся через nginx) ───────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks: [mimi-net]
+
+  # ─── Gateway (NGINX) ─────────────────────────────────────────────
   gateway:
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
       - "8080:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./backend/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
+      - frontend
       - auth-service
       - users-service
       - projects-service
