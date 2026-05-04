@@ -57,3 +57,37 @@ func Publish(ctx context.Context, rdb *redis.Client, e TaskEvent) error {
 	}
 	return rdb.Publish(ctx, TaskChannel, b).Err()
 }
+
+// ─── Team events ─────────────────────────────────────────────────────────────
+
+// TeamChannel — канал Redis Pub/Sub для событий команд (приглашения и т.п.)
+const TeamChannel = "mimi:events:teams"
+
+type TeamEventType string
+
+const TeamInvited TeamEventType = "team_invited"
+
+// TeamInvitedEvent публикуется teams-service при создании приглашения.
+// notifications-service подписывается, резолвит email → userID через
+// auth-service и создаёт уведомление получателю.
+type TeamInvitedEvent struct {
+	Type         TeamEventType `json:"type"`
+	InvitationID string        `json:"invitation_id"`
+	TeamID       string        `json:"team_id"`
+	TeamName     string        `json:"team_name"`
+	Email        string        `json:"email"`
+	InvitedByID  string        `json:"invited_by_id"`
+	At           time.Time     `json:"at"`
+}
+
+// PublishTeamInvited кодирует и шлёт TeamInvitedEvent в TeamChannel.
+func PublishTeamInvited(ctx context.Context, rdb *redis.Client, e TeamInvitedEvent) error {
+	if e.At.IsZero() {
+		e.At = time.Now().UTC()
+	}
+	b, err := json.Marshal(e)
+	if err != nil {
+		return err
+	}
+	return rdb.Publish(ctx, TeamChannel, b).Err()
+}

@@ -11,6 +11,7 @@ import { ArchivePage } from '@/pages/ArchivePage'
 import { useAuth } from '@/store/authStore'
 import { useProjects } from '@/store/projectStore'
 import { useNotifications } from '@/store/notificationStore'
+import { useTheme } from '@/store/themeStore'
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const user = useAuth((s) => s.user)
@@ -37,6 +38,11 @@ export default function App() {
   const loadNotifications = useNotifications((s) => s.load)
   const startStream = useNotifications((s) => s.startStream)
   const stopStream = useNotifications((s) => s.stopStream)
+  const theme = useTheme((s) => s.theme)
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+  }, [theme])
 
   // 1) bootstrap session при старте
   useEffect(() => {

@@ -11,12 +11,12 @@ export interface ToolDef {
 export type ToolMode = 'select' | CanvasElementType
 
 export const TOOLS: ToolDef[] = [
-  { id: 'select', label: '↖ Выбор', hint: 'V — выбирать и двигать элементы' },
-  { id: 'block', label: '□ Блок', hint: 'B — прямоугольный блок' },
-  { id: 'sticker', label: '◆ Стикер', hint: 'S — заметка-стикер' },
-  { id: 'text', label: 'T Текст', hint: 'T — текстовая метка' },
-  { id: 'mind_node', label: '○ Узел', hint: 'M — узел mind map' },
-  { id: 'arrow', label: '↗ Стрелка', hint: 'A — соединить два элемента' },
+  { id: 'select',    label: '↖',  hint: 'Выбор (V)' },
+  { id: 'block',     label: '▭',  hint: 'Блок (B)' },
+  { id: 'sticker',   label: '🗒', hint: 'Стикер (S)' },
+  { id: 'text',      label: 'T',  hint: 'Текст (T)' },
+  { id: 'mind_node', label: '◯',  hint: 'Узел (M)' },
+  { id: 'arrow',     label: '→',  hint: 'Стрелка (A)' },
 ]
 
 interface Props {
@@ -57,9 +57,9 @@ export function CanvasToolbar({
           key={t.id}
           title={t.hint}
           onClick={() => onTool(t.id)}
-          className={`rounded px-2 py-1 text-xs transition-colors ${
+          className={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${
             tool === t.id
-              ? 'bg-ink text-paper'
+              ? 'bg-ink text-paper shadow-sm'
               : 'text-ink-light hover:bg-paper-hover hover:text-ink'
           }`}
         >
@@ -90,8 +90,8 @@ export function CanvasToolbar({
             +
           </button>
         </div>
-        <span className="text-xs text-ink-lighter">
-          {elementsCount} · Del — удалить · Space+drag — пан · Ctrl+wheel — zoom
+        <span className="hidden text-xs text-ink-lighter lg:inline">
+          {elementsCount > 0 ? `${elementsCount} эл.` : ''} · Del — удалить · Space — пан · Колесо — zoom
         </span>
       </div>
     </div>

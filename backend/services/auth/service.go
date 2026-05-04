@@ -118,6 +118,12 @@ func (s *Service) Me(ctx context.Context, userID string) (*User, error) {
 	return s.repo.ByID(ctx, userID)
 }
 
+// ByEmail finds a user by email address. Used by the internal
+// /internal/users/by-email endpoint (service-to-service, no JWT).
+func (s *Service) ByEmail(ctx context.Context, email string) (*User, error) {
+	return s.repo.ByEmail(ctx, strings.ToLower(strings.TrimSpace(email)))
+}
+
 func (s *Service) UpdateProfile(ctx context.Context, userID string, req UpdateProfileRequest) (*User, error) {
 	if req.Email != nil {
 		e := strings.ToLower(strings.TrimSpace(*req.Email))

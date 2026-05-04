@@ -5,6 +5,18 @@ import { useAuth } from '@/store/authStore'
 import { IconPlus, IconSearch } from '@/components/ui/Icon'
 import { TaskModal } from './TaskModal'
 import { Input } from '@/components/ui/Input'
+import { Select } from '@/components/ui/Select'
+
+const PriorityDot = ({ color }: { color: string }) => (
+  <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
+)
+
+const PRIORITY_FILTER_OPTIONS = [
+  { value: 'urgent' as const, label: 'Срочный', icon: <PriorityDot color="bg-red-500" /> },
+  { value: 'high'   as const, label: 'Высокий', icon: <PriorityDot color="bg-orange-400" /> },
+  { value: 'medium' as const, label: 'Средний', icon: <PriorityDot color="bg-amber-400" /> },
+  { value: 'low'    as const, label: 'Низкий',  icon: <PriorityDot color="bg-sky-400" /> },
+]
 
 const COLUMNS: Array<{ id: TaskStatus; title: string }> = [
   { id: 'backlog', title: 'Backlog' },
@@ -89,41 +101,35 @@ export function KanbanBoard({ projectId, memberIds }: { projectId: ID; memberIds
         </div>
 
         {memberIds && memberIds.length > 0 && (
-          <select
-            className="input w-auto py-1.5 text-xs"
+          <Select
             value={assigneeFilter}
-            onChange={(e) => setAssigneeFilter(e.target.value)}
-          >
-            <option value="">Все исполнители</option>
-            {memberIds.map((id) => {
-              const u = getUser(id)
-              return (
-                <option key={id} value={id}>
-                  {u?.name || id}
-                </option>
-              )
-            })}
-          </select>
+            onChange={setAssigneeFilter}
+            options={memberIds.map((id) => ({ value: id, label: getUser(id)?.name || id }))}
+            nullable
+            nullLabel="Все исполнители"
+            placeholder="Все исполнители"
+            size="sm"
+            className="w-auto min-w-[140px]"
+          />
         )}
 
-        <select
-          className="input w-auto py-1.5 text-xs"
+        <Select
           value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value as typeof priorityFilter)}
-        >
-          <option value="">Любой приоритет</option>
-          <option value="urgent">Срочный</option>
-          <option value="high">Высокий</option>
-          <option value="medium">Средний</option>
-          <option value="low">Низкий</option>
-        </select>
+          onChange={(v) => setPriorityFilter(v as typeof priorityFilter)}
+          options={PRIORITY_FILTER_OPTIONS}
+          nullable
+          nullLabel="Любой приоритет"
+          placeholder="Любой приоритет"
+          size="sm"
+          className="w-auto min-w-[140px]"
+        />
 
         <div className="ml-auto text-xs text-ink-lighter">{filtered.length} задач</div>
       </div>
 
       {/* Board */}
       <div className="flex-1 overflow-x-auto overflow-y-hidden">
-        <div className="flex h-full min-w-max gap-3 p-6">
+        <div className="flex h-full min-w-full gap-3 p-6">
           {COLUMNS.map((col) => (
             <div
               key={col.id}
@@ -133,7 +139,7 @@ export function KanbanBoard({ projectId, memberIds }: { projectId: ID; memberIds
               }}
               onDragLeave={() => setDragOver((prev) => (prev === col.id ? null : prev))}
               onDrop={() => onDrop(col.id)}
-              className={`flex w-72 shrink-0 flex-col rounded-md border border-line bg-paper-soft transition-colors ${
+              className={`flex flex-1 min-w-[200px] flex-col rounded-md border border-line bg-paper-soft transition-colors ${
                 dragOver === col.id ? 'bg-paper-hover' : ''
               }`}
             >

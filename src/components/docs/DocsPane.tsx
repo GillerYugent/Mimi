@@ -6,6 +6,11 @@ import { BlockEditor } from './BlockEditor'
 import { IconChevronDown, IconChevronRight, IconFile, IconHistory, IconPlus, IconSearch, IconTrash } from '@/components/ui/Icon'
 import { Modal, Confirm } from '@/components/ui/Modal'
 import { formatRelative } from '@/utils/date'
+import { uid } from '@/utils/id'
+
+function ensureBlocks(blocks: Block[]): Block[] {
+  return blocks.length ? blocks : [{ id: uid('b'), type: 'paragraph' as const, content: '' }]
+}
 
 interface Props {
   scope: { projectId?: ID; mySpaceId?: ID }
@@ -194,14 +199,14 @@ function PageEditor({ pageId, onAfterDelete }: { pageId: ID; onAfterDelete: () =
   // Локальная копия для оптимистичного UI, чтобы инпуты ходили без задержки.
   const [localTitle, setLocalTitle] = useState(page?.title ?? '')
   const [localIcon, setLocalIcon] = useState(page?.icon ?? '')
-  const [localBlocks, setLocalBlocks] = useState<Block[]>(page?.blocks ?? [])
+  const [localBlocks, setLocalBlocks] = useState<Block[]>(ensureBlocks(page?.blocks ?? []))
 
   // Sync с серверной копией (если page обновили на бэке).
   useEffect(() => {
     if (!page) return
     setLocalTitle(page.title)
     setLocalIcon(page.icon ?? '')
-    setLocalBlocks(page.blocks)
+    setLocalBlocks(ensureBlocks(page.blocks))
   }, [pageId, page?.updatedAt])
 
   // На случай если страница ещё не загружена — подтягиваем.

@@ -5,6 +5,12 @@ import { gitApi } from '@/api/git'
 import { formatRelative } from '@/utils/date'
 import { IconGit, IconLink } from '@/components/ui/Icon'
 import { Confirm } from '@/components/ui/Modal'
+import { Select } from '@/components/ui/Select'
+
+const PROVIDER_OPTIONS = [
+  { value: 'github' as const, label: 'GitHub' },
+  { value: 'gitlab' as const, label: 'GitLab' },
+]
 
 interface Props {
   projectId: ID
@@ -98,14 +104,12 @@ export function GitPane({ projectId }: Props) {
           </p>
           <div className="mx-auto mt-4 max-w-md space-y-2 text-left">
             <div className="flex gap-2">
-              <select
-                className="input w-auto"
+              <Select
                 value={provider}
-                onChange={(e) => setProvider(e.target.value as 'github' | 'gitlab')}
-              >
-                <option value="github">GitHub</option>
-                <option value="gitlab">GitLab</option>
-              </select>
+                onChange={(v) => setProvider(v as 'github' | 'gitlab')}
+                options={PROVIDER_OPTIONS}
+                className="w-auto min-w-[110px]"
+              />
               <input
                 className="input flex-1"
                 value={url}

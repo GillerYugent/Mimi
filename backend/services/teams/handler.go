@@ -19,6 +19,10 @@ func NewHandler(svc *Service, jwtSecret []byte) *Handler {
 }
 
 func (h *Handler) Register(r *mux.Router) {
+	// Internal service-to-service routes (no JWT — only reachable inside Docker network).
+	internal := r.PathPrefix("/internal").Subrouter()
+	internal.HandleFunc("/teams/user/{userID}", h.teamIDsForUser).Methods(http.MethodGet)
+
 	teams := r.PathPrefix("/teams").Subrouter()
 	teams.Use(auth.Middleware(h.secret))
 
@@ -245,6 +249,29 @@ func (h *Handler) cancelInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ─── Internal ────────────────────────────────────────────────────
+
+// teamIDsForUser returns the list of team IDs a user belongs to.
+// Called by projects-service to list team-member projects.
+// No JWT required — only reachable inside the Docker network.
+func (h *Handler) teamIDsForUser(w http.ResponseWriter, r *http.Request) {
+	userID := mux.Vars(r)["userID"]
+	if userID == "" {
+		httpx.Err(w, http.StatusBadRequest, "validation", "userID обязателен")
+		return
+	}
+	teams, err := h.svc.TeamsForUser(r.Context(), userID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	ids := make([]string, len(teams))
+	for i, t := range teams {
+		ids[i] = t.ID
+	}
+	httpx.JSON(w, http.StatusOK, ids)
 }
 
 // ─── Errors ──────────────────────────────────────────────────────

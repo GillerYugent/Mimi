@@ -34,6 +34,11 @@ func (h *Handler) Register(r *mux.Router) {
 	protected.HandleFunc("/me", h.updateProfile).Methods(http.MethodPatch)
 	protected.HandleFunc("/me/password", h.changePassword).Methods(http.MethodPost)
 	protected.HandleFunc("/me/notifications", h.updateNotificationPrefs).Methods(http.MethodPatch)
+
+	// Internal service-to-service endpoint (no JWT required — only reachable
+	// inside the Docker network, not exposed through the NGINX gateway).
+	internal := r.PathPrefix("/internal").Subrouter()
+	internal.HandleFunc("/users/by-email", h.userByEmail).Methods(http.MethodGet)
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
@@ -128,6 +133,22 @@ func (h *Handler) updateNotificationPrefs(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// userByEmail resolves an email address to {id, name}. Used internally by
+// notifications-service (no JWT — never routed through the public gateway).
+func (h *Handler) userByEmail(w http.ResponseWriter, r *http.Request) {
+	email := r.URL.Query().Get("email")
+	if email == "" {
+		httpx.Err(w, http.StatusBadRequest, "validation", "email обязателен")
+		return
+	}
+	user, err := h.svc.ByEmail(r.Context(), email)
+	if err != nil {
+		writeServiceErr(w, err)
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]string{"id": user.ID, "name": user.Name})
 }
 
 // writeServiceErr centralises mapping of domain errors to HTTP statuses.

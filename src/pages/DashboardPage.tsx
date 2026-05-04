@@ -10,9 +10,10 @@ import { IconFolder, IconPlus } from '@/components/ui/Icon'
 
 export function DashboardPage() {
   const user = useAuth((s) => s.user)
-  const projects = useProjects((s) => s.listActive())
+  const mySpaceProjectId = useAuth((s) => s.mySpaceProjectId)
+  const projects = useProjects((s) => s.listActive()).filter((p) => p.id !== mySpaceProjectId)
   const loadStats = useTasks((s) => s.loadStats)
-  const stats = useTasks((s) => s.stats)
+  const statsByProject = useTasks((s) => s.statsByProject)
 
   // Прогрузим stats для каждого проекта в фоне.
   useEffect(() => {
@@ -43,7 +44,7 @@ export function DashboardPage() {
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {projects.map((p) => {
-                const s = stats(p.id)
+                const s = statsByProject[p.id] ?? { total: 0, inProgress: 0, done: 0, overdue: 0 }
                 return (
                   <Link
                     key={p.id}

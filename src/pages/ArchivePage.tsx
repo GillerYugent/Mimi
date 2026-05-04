@@ -10,7 +10,8 @@ import { Confirm } from '@/components/ui/Modal'
 
 export function ArchivePage() {
   const user = useAuth((s) => s.user)
-  const archived = useProjects((s) => s.listArchived())
+  const mySpaceProjectId = useAuth((s) => s.mySpaceProjectId)
+  const archived = useProjects((s) => s.listArchived()).filter((p) => p.id !== mySpaceProjectId)
   const restore = useProjects((s) => s.restoreProject)
   const remove = useProjects((s) => s.deleteProject)
   const navigate = useNavigate()

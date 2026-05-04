@@ -58,7 +58,7 @@ export function DropdownItem({ onClick, icon, children, danger, disabled }: Item
         disabled
           ? 'cursor-not-allowed text-ink-lighter'
           : danger
-            ? 'text-red-600 hover:bg-red-50'
+            ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40'
             : 'text-ink hover:bg-paper-hover'
       }`}
     >

@@ -47,7 +47,7 @@ func main() {
 	defer rdb.Close()
 
 	repo := teams.NewRepo(pool)
-	svc := teams.NewService(repo)
+	svc := teams.NewService(repo, rdb)
 	handler := teams.NewHandler(svc, cfg.JWTSecret)
 
 	r := mux.NewRouter()

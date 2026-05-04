@@ -3,6 +3,32 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-ink: 55 53 47;
+    --color-ink-light: 120 119 116;
+    --color-ink-lighter: 155 154 151;
+    --color-paper: 255 255 255;
+    --color-paper-soft: 251 251 250;
+    --color-paper-sidebar: 247 247 245;
+    --color-paper-hover: 239 239 238;
+    --color-paper-active: 232 232 230;
+    --line: rgba(55, 53, 47, 0.09);
+    --line-strong: rgba(55, 53, 47, 0.16);
+  }
+
+  .dark {
+    --color-ink: 230 230 229;
+    --color-ink-light: 155 154 151;
+    --color-ink-lighter: 111 111 109;
+    --color-paper: 32 32 32;
+    --color-paper-soft: 26 26 26;
+    --color-paper-sidebar: 25 25 25;
+    --color-paper-hover: 46 46 46;
+    --color-paper-active: 58 58 58;
+    --line: rgba(255, 255, 255, 0.07);
+    --line-strong: rgba(255, 255, 255, 0.13);
+  }
+
   html,
   body,
   #root {
@@ -24,7 +50,7 @@
 
   /* Notion-style selection */
   ::selection {
-    background: rgba(35, 131, 226, 0.14);
+    background: rgba(35, 131, 226, 0.2);
   }
 
   /* Scrollbar — minimal */
@@ -36,13 +62,13 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(55, 53, 47, 0.16);
+    background: var(--line-strong);
     border-radius: 10px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(55, 53, 47, 0.32);
+    background: rgba(120, 119, 116, 0.4);
     background-clip: content-box;
   }
 }
@@ -61,7 +87,7 @@
     @apply border border-line text-ink hover:bg-paper-hover;
   }
   .btn-danger {
-    @apply text-red-600 hover:bg-red-50;
+    @apply text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40;
   }
 
   .input {
@@ -104,6 +130,6 @@
 
 /* Canvas */
 .canvas-grid {
-  background-image: radial-gradient(rgba(55, 53, 47, 0.12) 1px, transparent 1px);
+  background-image: radial-gradient(var(--line-strong) 1px, transparent 1px);
   background-size: 20px 20px;
 }

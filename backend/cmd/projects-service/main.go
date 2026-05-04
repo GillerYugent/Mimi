@@ -46,8 +46,13 @@ func main() {
 	}
 	defer rdb.Close()
 
+	teamsURL := os.Getenv("TEAMS_SERVICE_URL")
+	if teamsURL == "" {
+		teamsURL = "http://teams-service:8080"
+	}
+
 	repo := projects.NewRepo(pool)
-	svc := projects.NewService(repo, rdb)
+	svc := projects.NewService(repo, rdb, teamsURL)
 	handler := projects.NewHandler(svc, cfg.JWTSecret)
 
 	r := mux.NewRouter()

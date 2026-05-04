@@ -80,6 +80,37 @@ func (r *Repo) ListByOwner(ctx context.Context, ownerID string, status ProjectSt
 	return out, rows.Err()
 }
 
+// ListByOwnerOrTeams returns projects owned by the user OR belonging to any
+// of the provided team IDs (team-member projects). Falls back to ListByOwner
+// when teamIDs is empty.
+func (r *Repo) ListByOwnerOrTeams(ctx context.Context, ownerID string, teamIDs []string, status ProjectStatus) ([]Project, error) {
+	if len(teamIDs) == 0 {
+		return r.ListByOwner(ctx, ownerID, status)
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, title, description, owner_id, team_id, status, icon, created_at, updated_at
+		FROM projects
+		WHERE (owner_id = $1 OR team_id = ANY($3)) AND status = $2
+		ORDER BY updated_at DESC
+	`, ownerID, status, teamIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Project{}
+	for rows.Next() {
+		var p Project
+		if err := rows.Scan(
+			&p.ID, &p.Title, &p.Description, &p.OwnerID, &p.TeamID,
+			&p.Status, &p.Icon, &p.CreatedAt, &p.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // Update применяет частичное обновление: неnil-поля. Возвращает актуальную запись.
 func (r *Repo) Update(ctx context.Context, id string, req UpdateRequest) (*Project, error) {
 	_, err := r.pool.Exec(ctx, `

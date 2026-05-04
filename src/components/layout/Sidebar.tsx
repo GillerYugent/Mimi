@@ -7,8 +7,10 @@ import {
   IconFolder,
   IconHome,
   IconLogout,
+  IconMoon,
   IconPlus,
   IconSettings,
+  IconSun,
   IconUser,
 } from '@/components/ui/Icon'
 import { Dropdown, DropdownDivider, DropdownItem } from '@/components/ui/Dropdown'
@@ -16,6 +18,16 @@ import { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { useNotifications } from '@/store/notificationStore'
+import { useTheme } from '@/store/themeStore'
+
+const PROJECT_ICONS = [
+  '📁', '📂', '📋', '📌', '🎯', '🚀',
+  '⭐', '🌟', '💡', '🔥', '💼', '🏢',
+  '💻', '🔧', '⚙️', '🔑', '🔒', '🌐',
+  '📊', '📈', '🎨', '🎭', '🎮', '📱',
+  '🤖', '🏆', '⚡', '🌊', '🌿', '🐳',
+  '🦊', '🦁', '🦅', '🌈', '🎸', '🎪',
+]
 
 export function Sidebar() {
   const user = useAuth((s) => s.currentUser())
@@ -23,19 +35,25 @@ export function Sidebar() {
   const navigate = useNavigate()
   const loc = useLocation()
 
+  const mySpaceProjectId = useAuth((s) => s.mySpaceProjectId)
   const active = useProjects((s) => (user ? s.listActive(user.id) : []))
+    .filter((p) => p.id !== mySpaceProjectId)
   const archived = useProjects((s) => (user ? s.listArchived(user.id) : []))
+    .filter((p) => p.id !== mySpaceProjectId)
   const createProject = useProjects((s) => s.createProject)
   const unread = useNotifications((s) => (user ? s.unreadCount(user.id) : 0))
+
+  const theme = useTheme((s) => s.theme)
+  const toggleTheme = useTheme((s) => s.toggle)
 
   const [showNew, setShowNew] = useState(false)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [icon, setIcon] = useState('📁')
+  const [showIconPicker, setShowIconPicker] = useState(false)
+  const [creating, setCreating] = useState(false)
 
   if (!user) return null
-
-  const [creating, setCreating] = useState(false)
 
   const onCreate = async () => {
     const t = title.trim()
@@ -47,6 +65,7 @@ export function Sidebar() {
       setTitle('')
       setDescription('')
       setIcon('📁')
+      setShowIconPicker(false)
       navigate(`/project/${p.id}`)
     } finally {
       setCreating(false)
@@ -147,7 +166,7 @@ export function Sidebar() {
           </div>
         </div>
 
-        <div className="mt-auto px-2 pb-3">
+        <div className="mt-auto px-2 pb-3 space-y-0.5">
           {archived.length > 0 && (
             <Link to="/archive" className={`sidebar-item ${isActive('/archive') ? 'active' : ''}`}>
               <IconArchive />
@@ -155,12 +174,20 @@ export function Sidebar() {
               <span className="text-xs text-ink-lighter">{archived.length}</span>
             </Link>
           )}
+          <button
+            onClick={toggleTheme}
+            className="sidebar-item w-full"
+            aria-label={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+          >
+            {theme === 'dark' ? <IconSun size={15} /> : <IconMoon size={15} />}
+            <span>{theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}</span>
+          </button>
         </div>
       </aside>
 
       <Modal
         open={showNew}
-        onClose={() => setShowNew(false)}
+        onClose={() => { setShowNew(false); setShowIconPicker(false) }}
         title="Создать проект"
         footer={
           <>
@@ -175,15 +202,38 @@ export function Sidebar() {
       >
         <div className="space-y-3">
           <div className="flex gap-3">
-            <label className="block w-24">
+            <div>
               <span className="mb-1 block text-xs font-medium text-ink-light">Иконка</span>
-              <input
-                className="input text-center text-2xl"
-                value={icon}
-                onChange={(e) => setIcon(e.target.value.slice(0, 2))}
-                maxLength={2}
-              />
-            </label>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowIconPicker((x) => !x)}
+                  className="flex h-10 w-10 items-center justify-center rounded-md border border-line bg-paper text-2xl hover:bg-paper-hover"
+                >
+                  {icon}
+                </button>
+                {showIconPicker && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setShowIconPicker(false)}
+                    />
+                    <div className="absolute left-0 top-11 z-50 w-64 grid grid-cols-6 gap-1 rounded-md border border-line bg-paper p-2 shadow-lg">
+                      {PROJECT_ICONS.map((e) => (
+                        <button
+                          key={e}
+                          type="button"
+                          onClick={() => { setIcon(e); setShowIconPicker(false) }}
+                          className={`flex h-9 w-9 items-center justify-center rounded text-xl transition-colors hover:bg-paper-hover ${icon === e ? 'bg-paper-soft ring-1 ring-line' : ''}`}
+                        >
+                          {e}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
             <Input
               label="Название"
               value={title}

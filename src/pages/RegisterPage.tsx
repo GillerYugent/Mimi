@@ -64,7 +64,7 @@ export function RegisterPage() {
             required
             minLength={6}
           />
-          {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
+          {error && <div className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-400">{error}</div>}
           <button type="submit" className="btn btn-primary w-full py-2" disabled={loading}>
             {loading ? 'Создаём...' : 'Зарегистрироваться'}
           </button>

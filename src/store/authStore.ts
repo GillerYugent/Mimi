@@ -11,6 +11,8 @@ interface AuthState {
   publicUsers: Record<string, PublicUser>
   // Identity My Space (PK таблицы my_spaces в users-service).
   mySpaceId: string | null
+  // ID проекта-обёртки для задач My Space (создаётся лениво через ensureMySpaceProject).
+  mySpaceProjectId: string | null
 
   bootstrapping: boolean
 
@@ -42,6 +44,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   user: null,
   publicUsers: {},
   mySpaceId: null,
+  mySpaceProjectId: null,
   bootstrapping: !!getTokens(),
 
   bootstrap: async () => {
@@ -85,7 +88,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   logout: async () => {
     const t = getTokens()
     if (t) await authApi.logout(t.refreshToken)
-    set({ user: null, mySpaceId: null, publicUsers: {} })
+    set({ user: null, mySpaceId: null, mySpaceProjectId: null, publicUsers: {} })
   },
 
   updateProfile: async (updates) => {

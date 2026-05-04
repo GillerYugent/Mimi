@@ -1,7 +1,8 @@
-import { KeyboardEvent, useRef } from 'react'
+import { KeyboardEvent, useLayoutEffect, useRef } from 'react'
 import type { Block, BlockType } from '@/types'
 import { uid } from '@/utils/id'
 import { IconCheck, IconPlus, IconTrash } from '@/components/ui/Icon'
+import { Dropdown, DropdownItem } from '@/components/ui/Dropdown'
 
 interface Props {
   blocks: Block[]
@@ -76,8 +77,8 @@ export function BlockEditor({ blocks, onChange, readOnly }: Props) {
       e.preventDefault()
       let nextType: BlockType = 'paragraph'
       if (block.type === 'bulleted_list' || block.type === 'numbered_list' || block.type === 'todo') {
-        // Empty list item -> break out of list
-        if (!block.content.trim()) {
+        const domText = (e.target as HTMLElement).textContent || ''
+        if (!domText.trim()) {
           changeType(block.id, 'paragraph')
           return
         }
@@ -88,35 +89,38 @@ export function BlockEditor({ blocks, onChange, readOnly }: Props) {
     }
 
     // Backspace on empty block removes it and focuses previous
-    if (e.key === 'Backspace' && !block.content) {
-      const idx = blocks.findIndex((b) => b.id === block.id)
-      if (idx > 0) {
-        e.preventDefault()
-        const prev = blocks[idx - 1]
-        remove(block.id)
-        setTimeout(() => {
-          const el = containerRef.current?.querySelector<HTMLElement>(`[data-block-id="${prev.id}"] [contenteditable]`)
-          el?.focus()
-          // Put caret at end
-          if (el) {
-            const range = document.createRange()
-            range.selectNodeContents(el)
-            range.collapse(false)
-            const sel = window.getSelection()
-            sel?.removeAllRanges()
-            sel?.addRange(range)
-          }
-        }, 0)
+    if (e.key === 'Backspace') {
+      const domText = (e.target as HTMLElement).textContent || ''
+      if (!domText) {
+        const idx = blocks.findIndex((b) => b.id === block.id)
+        if (idx > 0) {
+          e.preventDefault()
+          const prev = blocks[idx - 1]
+          remove(block.id)
+          setTimeout(() => {
+            const el = containerRef.current?.querySelector<HTMLElement>(`[data-block-id="${prev.id}"] [contenteditable]`)
+            el?.focus()
+            if (el) {
+              const range = document.createRange()
+              range.selectNodeContents(el)
+              range.collapse(false)
+              const sel = window.getSelection()
+              sel?.removeAllRanges()
+              sel?.addRange(range)
+            }
+          }, 0)
+        }
       }
       return
     }
 
-    // Markdown-like shortcuts at the start of a line
+    // Markdown-like shortcuts — read from the DOM, not stale React state
     if (e.key === ' ') {
-      const content = block.content
-      const newType = mdShortcut(content)
+      const domText = (e.target as HTMLElement).textContent || ''
+      const newType = mdShortcut(domText)
       if (newType && block.type !== newType) {
         e.preventDefault()
+        ;(e.target as HTMLElement).textContent = ''
         update(block.id, { type: newType, content: '' })
       }
     }
@@ -212,20 +216,51 @@ function BlockRow({
       )}
       <div className="flex min-w-0 flex-1 items-start">
         {prefix}
-        <div
-          contentEditable={editable}
-          suppressContentEditableWarning
+        <EditableContent
+          content={block.content}
+          editable={editable}
           className={`block flex-1 outline-none ${BLOCK_CLASSES[block.type]} ${
             block.type === 'todo' && block.checked ? 'text-ink-lighter line-through' : ''
           }`}
-          data-placeholder={PLACEHOLDERS[block.type]}
-          onBlur={(e) => onChangeContent(e.currentTarget.textContent || '')}
+          placeholder={PLACEHOLDERS[block.type]}
+          onBlur={onChangeContent}
           onKeyDown={(e) => onKeyDown(e, block)}
-        >
-          {block.content}
-        </div>
+        />
       </div>
+      {!readOnly && <RowControls onRemove={onRemove} onInsertAfter={onInsertAfter} onChangeType={onChangeType} currentType={block.type} />}
     </div>
+  )
+}
+
+// ─── ContentEditable that doesn't fight React's re-render ────────────────────
+interface EditableProps {
+  content: string
+  editable: boolean
+  className: string
+  placeholder: string
+  onBlur: (text: string) => void
+  onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void
+}
+
+function EditableContent({ content, editable, className, placeholder, onBlur, onKeyDown }: EditableProps) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Set text content only on mount — never overwrite what the user is typing.
+  useLayoutEffect(() => {
+    if (ref.current) ref.current.textContent = content
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      contentEditable={editable}
+      suppressContentEditableWarning
+      className={className}
+      data-placeholder={placeholder}
+      onBlur={(e) => onBlur(e.currentTarget.textContent || '')}
+      onKeyDown={onKeyDown}
+    />
   )
 }
 
@@ -274,18 +309,32 @@ function TypeChangerTrigger({
   onChangeType: (t: BlockType) => void
 }) {
   return (
-    <select
-      value={currentType}
-      onChange={(e) => onChangeType(e.target.value as BlockType)}
-      className="h-5 w-5 cursor-pointer rounded bg-paper-hover text-xs outline-none"
-      title="Тип блока"
-      style={{ appearance: 'none' }}
+    <Dropdown
+      trigger={
+        <button
+          type="button"
+          title="Тип блока"
+          className="flex h-5 w-5 items-center justify-center rounded text-ink-lighter hover:bg-paper-hover hover:text-ink"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+          </svg>
+        </button>
+      }
+      width="w-40"
     >
-      {TYPE_OPTIONS.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+      {(close) => (
+        <>
+          {TYPE_OPTIONS.map((o) => (
+            <DropdownItem
+              key={o.value}
+              onClick={() => { onChangeType(o.value); close() }}
+            >
+              <span className={currentType === o.value ? 'font-medium text-ink' : ''}>{o.label}</span>
+            </DropdownItem>
+          ))}
+        </>
+      )}
+    </Dropdown>
   )
 }

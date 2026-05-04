@@ -48,6 +48,11 @@ func main() {
 	}
 	defer rdb.Close()
 
+	authServiceURL := os.Getenv("AUTH_SERVICE_URL")
+	if authServiceURL == "" {
+		authServiceURL = "http://auth-service:8080"
+	}
+
 	repo := notifications.NewRepo(pool)
 	hub := notifications.NewHub()
 	svc := notifications.NewService(repo, hub)
@@ -55,6 +60,8 @@ func main() {
 
 	// Подписка на канал событий задач из tasks-service.
 	go svc.StartTaskEventsConsumer(rootCtx, rdb)
+	// Подписка на канал событий команд из teams-service.
+	go svc.StartTeamEventsConsumer(rootCtx, rdb, authServiceURL)
 
 	r := mux.NewRouter()
 	r.Use(httpx.Recover)

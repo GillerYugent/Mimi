@@ -175,9 +175,11 @@ services:
       <<: *service-env
       SERVICE_NAME: projects-service
       DATABASE_URL: postgres://mimi:mimi@postgres-projects:5432/mimi_projects?sslmode=disable
+      TEAMS_SERVICE_URL: http://teams-service:8080
     depends_on:
       postgres-projects: { condition: service_healthy }
       redis:             { condition: service_healthy }
+      teams-service:     { condition: service_started }
     networks: [mimi-net]
 
   tasks-service:
@@ -271,9 +273,25 @@ services:
       <<: *service-env
       SERVICE_NAME: notifications-service
       DATABASE_URL: postgres://mimi:mimi@postgres-notifications:5432/mimi_notifications?sslmode=disable
+      AUTH_SERVICE_URL: http://auth-service:8080
     depends_on:
       postgres-notifications: { condition: service_healthy }
       redis:                  { condition: service_healthy }
+      auth-service:           { condition: service_started }
+    networks: [mimi-net]
+
+  # ─── Swagger UI ─────────────────────────────────────────────────
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.17.14
+    restart: unless-stopped
+    environment:
+      SWAGGER_JSON: /swagger/openapi.yaml
+      BASE_URL: /docs
+      DEEP_LINKING: "true"
+      DISPLAY_REQUEST_DURATION: "true"
+      DEFAULT_MODELS_EXPAND_DEPTH: "2"
+    volumes:
+      - ./backend/swagger:/swagger:ro
     networks: [mimi-net]
 
   # ─── Frontend (React + Vite, отдаётся через nginx) ───────────────
@@ -294,6 +312,7 @@ services:
       - ./backend/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - frontend
+      - swagger-ui
       - auth-service
       - users-service
       - projects-service

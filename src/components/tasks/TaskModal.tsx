@@ -2,26 +2,36 @@ import { useState } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { Select } from '@/components/ui/Select'
+import { DatePicker } from '@/components/ui/DatePicker'
 import type { ID, Task, TaskPriority, TaskStatus } from '@/types'
 import { useTasks } from '@/store/taskStore'
 import { useAuth } from '@/store/authStore'
 import { formatDateInput } from '@/utils/date'
 import { IconCheck, IconPlus, IconTrash } from '@/components/ui/Icon'
 
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  backlog: 'Backlog',
-  todo: 'To Do',
-  in_progress: 'In Progress',
-  review: 'Review',
-  done: 'Done',
-}
+// Colored dots for status
+const StatusDot = ({ color }: { color: string }) => (
+  <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
+)
+const PriorityDot = ({ color }: { color: string }) => (
+  <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
+)
 
-const PRIORITY_LABELS: Record<TaskPriority, string> = {
-  low: 'Низкий',
-  medium: 'Средний',
-  high: 'Высокий',
-  urgent: 'Срочный',
-}
+const STATUS_OPTIONS = [
+  { value: 'backlog'     as TaskStatus, label: 'Backlog',      icon: <StatusDot color="bg-ink-lighter" /> },
+  { value: 'todo'        as TaskStatus, label: 'To Do',         icon: <StatusDot color="bg-blue-400" /> },
+  { value: 'in_progress' as TaskStatus, label: 'In Progress',   icon: <StatusDot color="bg-amber-400" /> },
+  { value: 'review'      as TaskStatus, label: 'Review',        icon: <StatusDot color="bg-violet-400" /> },
+  { value: 'done'        as TaskStatus, label: 'Done',          icon: <StatusDot color="bg-emerald-400" /> },
+]
+
+const PRIORITY_OPTIONS = [
+  { value: 'low'    as TaskPriority, label: 'Низкий',   icon: <PriorityDot color="bg-sky-400" /> },
+  { value: 'medium' as TaskPriority, label: 'Средний',  icon: <PriorityDot color="bg-amber-400" /> },
+  { value: 'high'   as TaskPriority, label: 'Высокий',  icon: <PriorityDot color="bg-orange-400" /> },
+  { value: 'urgent' as TaskPriority, label: 'Срочный',  icon: <PriorityDot color="bg-red-500" /> },
+]
 
 interface Props {
   task: Task
@@ -77,6 +87,11 @@ export function TaskModal({ task, onClose, memberIds }: Props) {
     setSubTitle('')
   }
 
+  const memberOptions = (memberIds || []).map((id) => {
+    const u = getUser(id)
+    return { value: id, label: u?.name || id }
+  })
+
   return (
     <Modal
       open
@@ -126,55 +141,34 @@ export function TaskModal({ task, onClose, memberIds }: Props) {
         />
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-light">Статус</span>
-            <select
-              className="input"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as TaskStatus)}
-            >
-              {Object.entries(STATUS_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-light">Приоритет</span>
-            <select
-              className="input"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value as TaskPriority)}
-            >
-              {Object.entries(PRIORITY_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>
-                  {l}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Статус"
+            value={status}
+            onChange={(v) => setStatus(v as TaskStatus)}
+            options={STATUS_OPTIONS}
+          />
+          <Select
+            label="Приоритет"
+            value={priority}
+            onChange={(v) => setPriority(v as TaskPriority)}
+            options={PRIORITY_OPTIONS}
+          />
 
-          <Input label="Дедлайн" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          <DatePicker
+            label="Дедлайн"
+            value={deadline}
+            onChange={setDeadline}
+          />
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-light">Исполнитель</span>
-            <select
-              className="input"
-              value={assigneeId}
-              onChange={(e) => setAssigneeId(e.target.value)}
-            >
-              <option value="">— не назначен —</option>
-              {(memberIds || []).map((id) => {
-                const u = getUser(id)
-                return (
-                  <option key={id} value={id}>
-                    {u?.name || id}
-                  </option>
-                )
-              })}
-            </select>
-          </label>
+          <Select
+            label="Исполнитель"
+            value={assigneeId}
+            onChange={setAssigneeId}
+            options={memberOptions}
+            nullable
+            nullLabel="— не назначен —"
+            placeholder="— не назначен —"
+          />
         </div>
 
         <div>

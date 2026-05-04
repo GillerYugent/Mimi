@@ -3,7 +3,7 @@ import type { Canvas, CanvasElement, CanvasElementType, ID } from '@/types'
 import { useBoards } from '@/store/boardStore'
 import { IconTrash } from '@/components/ui/Icon'
 import { CanvasToolbar, type ToolMode } from './CanvasToolbar'
-import { CanvasNode, type ResizeCorner } from './CanvasNode'
+import { CanvasNode, type ResizeCorner, NODE_COLORS } from './CanvasNode'
 import { useCanvasViewport } from './useCanvasViewport'
 import { anchorPoint } from './anchor'
 
@@ -21,10 +21,10 @@ type DragState =
   | { kind: 'marquee'; startWorldX: number; startWorldY: number; curWorldX: number; curWorldY: number }
 
 const DEFAULTS: Record<Exclude<CanvasElementType, 'arrow'>, { width: number; height: number; text: string }> = {
-  block:     { width: 160, height: 70,  text: 'Блок' },
-  sticker:   { width: 140, height: 110, text: 'Заметка' },
-  text:      { width: 140, height: 30,  text: 'Текст' },
-  mind_node: { width: 130, height: 60,  text: 'Идея' },
+  block:     { width: 160, height: 80,  text: '' },
+  sticker:   { width: 160, height: 140, text: '' },
+  text:      { width: 160, height: 36,  text: '' },
+  mind_node: { width: 140, height: 70,  text: '' },
 }
 
 export function CanvasView({ canvas }: Props) {
@@ -333,7 +333,7 @@ export function CanvasView({ canvas }: Props) {
           y1={a.y}
           x2={b.x}
           y2={b.y}
-          stroke={isSelected ? '#37352f' : '#787774'}
+          stroke={isSelected ? 'rgb(var(--color-ink))' : 'rgb(var(--color-ink-light))'}
           strokeWidth={isSelected ? 2 : 1.5}
           markerEnd="url(#arrowhead)"
         />
@@ -385,7 +385,7 @@ export function CanvasView({ canvas }: Props) {
               orient="auto"
               markerUnits="strokeWidth"
             >
-              <path d="M0,0 L0,10 L10,5 z" fill="#787774" />
+              <path d="M0,0 L0,10 L10,5 z" fill="rgb(var(--color-ink-light))" />
             </marker>
           </defs>
 
@@ -417,7 +417,7 @@ export function CanvasView({ canvas }: Props) {
                     y1={a.y}
                     x2={drag.toX}
                     y2={drag.toY}
-                    stroke="#787774"
+                    stroke="rgb(var(--color-ink-light))"
                     strokeDasharray="4 4"
                     strokeWidth={1.5}
                   />
@@ -472,20 +472,45 @@ export function CanvasView({ canvas }: Props) {
           </div>
         )}
 
-        {selectedIds.size > 0 && (
-          <div className="absolute right-4 top-4 flex items-center gap-1 rounded-md border border-line bg-paper p-1 shadow-notion">
-            <button
-              className="rounded p-1 text-ink-light hover:bg-paper-hover hover:text-red-600"
-              onClick={() => {
-                for (const id of selectedIds) deleteElement(canvas.id, id)
-                setSelectedIds(new Set())
-              }}
-              aria-label="Удалить"
-            >
-              <IconTrash size={14} />
-            </button>
-          </div>
-        )}
+        {selectedIds.size > 0 && (() => {
+          const selArr = Array.from(selectedIds)
+          const singleEl = selArr.length === 1 ? elementsMap.get(selArr[0]) : undefined
+          const canColor = singleEl && singleEl.type !== 'arrow'
+          return (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 rounded-lg border border-line bg-paper px-2 py-1.5 shadow-notion-lg">
+              {canColor && (
+                <>
+                  <div className="flex items-center gap-1 pr-1 border-r border-line mr-1">
+                    {NODE_COLORS.map((c) => (
+                      <button
+                        key={c.key}
+                        title={c.key}
+                        onClick={() => updateElement(canvas.id, singleEl.id, { color: c.key })}
+                        className="h-5 w-5 rounded-full border-2 transition-transform hover:scale-110"
+                        style={{
+                          background: c.fill,
+                          borderColor: singleEl.color === c.key ? '#2383e2' : c.stroke,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+              <span className="text-xs text-ink-lighter mr-1">{selArr.length > 1 ? `${selArr.length} эл.` : ''}</span>
+              <button
+                className="rounded p-1 text-ink-light hover:bg-paper-hover hover:text-red-600"
+                onClick={() => {
+                  for (const id of selectedIds) deleteElement(canvas.id, id)
+                  setSelectedIds(new Set())
+                }}
+                aria-label="Удалить"
+                title="Удалить (Del)"
+              >
+                <IconTrash size={14} />
+              </button>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

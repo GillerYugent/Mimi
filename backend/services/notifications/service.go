@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gilleryugent/mimi-backend/internal/events"
@@ -98,6 +101,93 @@ func (s *Service) StartTaskEventsConsumer(ctx context.Context, rdb *redis.Client
 			s.handleTaskEvent(ctx, msg.Payload)
 		}
 	}
+}
+
+// ─── Team events consumer ────────────────────────────────────────
+
+// StartTeamEventsConsumer подписывается на events.TeamChannel, резолвит
+// email → userID через auth-service (внутренний HTTP) и создаёт
+// уведомление типа TypeTeamInvited.
+func (s *Service) StartTeamEventsConsumer(ctx context.Context, rdb *redis.Client, authServiceURL string) {
+	sub := rdb.Subscribe(ctx, events.TeamChannel)
+	defer sub.Close()
+	ch := sub.Channel()
+
+	slog.Info("subscribed to redis channel", "channel", events.TeamChannel)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			s.handleTeamEvent(ctx, msg.Payload, authServiceURL)
+		}
+	}
+}
+
+func (s *Service) handleTeamEvent(ctx context.Context, payload, authServiceURL string) {
+	var e events.TeamInvitedEvent
+	if err := json.Unmarshal([]byte(payload), &e); err != nil {
+		slog.Warn("bad team event", "err", err)
+		return
+	}
+	if e.Type != events.TeamInvited {
+		return
+	}
+
+	// Резолвим email → userID через auth-service.
+	userID, err := resolveUserByEmail(ctx, authServiceURL, e.Email)
+	if err != nil {
+		// Пользователя с таким email нет в системе — приглашение отправили
+		// на внешний ящик; уведомление создавать не нужно.
+		slog.Info("no user for invited email, skipping notification", "email", e.Email, "err", err)
+		return
+	}
+
+	link := fmt.Sprintf("/invitations/%s/accept", e.InvitationID)
+	if _, err := s.Create(ctx, CreateRequest{
+		UserID: userID,
+		Type:   TypeTeamInvited,
+		Title:  fmt.Sprintf("Вас пригласили в команду «%s»", e.TeamName),
+		Body:   "Нажмите «Принять», чтобы вступить в команду.",
+		Link:   &link,
+	}); err != nil {
+		slog.Warn("create team_invited notification failed", "err", err)
+	}
+}
+
+// resolveUserByEmail вызывает auth-service для поиска userID по email.
+func resolveUserByEmail(ctx context.Context, authServiceURL, email string) (string, error) {
+	u := authServiceURL + "/internal/users/by-email?email=" + url.QueryEscape(email)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", fmt.Errorf("user not found")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("auth-service returned %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	return result.ID, nil
 }
 
 func (s *Service) handleTaskEvent(ctx context.Context, payload string) {

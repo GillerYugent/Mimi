@@ -5,6 +5,7 @@ import { useAuth } from '@/store/authStore'
 import { useProjects } from '@/store/projectStore'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
+import { Select } from '@/components/ui/Select'
 import { IconPlus, IconTrash, IconUsers } from '@/components/ui/Icon'
 
 const PERMISSION_LABELS: Array<{ key: keyof RolePermissions; label: string }> = [
@@ -26,7 +27,19 @@ export function TeamPane({ projectId }: Props) {
   const updateProject = useProjects((s) => s.updateProject)
   const user = useAuth((s) => s.user)
   const fetchUsers = useAuth((s) => s.fetchUsers)
-  const getUser = useAuth((s) => s.getUser)
+  // Subscribe to publicUsers directly — getUser is a stable function reference
+  // and won't trigger re-renders when the cache fills in.
+  const publicUsers = useAuth((s) => s.publicUsers)
+  const getUser = (id: string) => {
+    if (user?.id === id) return user
+    const p = publicUsers[id]
+    if (!p) return undefined
+    return {
+      id: p.id, name: p.name, email: p.email, avatarUrl: p.avatarUrl,
+      passwordHash: '', createdAt: p.createdAt,
+      notificationPrefs: { taskAssigned: true, taskStatusChanged: true, teamInvited: true, mentionedInDoc: true },
+    }
+  }
 
   const team = useTeams((s) => (project?.teamId ? s.getTeam(project.teamId) : undefined))
   const createTeam = useTeams((s) => s.createTeam)
@@ -168,19 +181,16 @@ export function TeamPane({ projectId }: Props) {
                   </div>
                   <div className="truncate text-xs text-ink-light">{u?.email}</div>
                 </div>
-                <select
-                  className="input w-auto py-1 text-xs"
+                <Select
                   value={m.roleId || ''}
-                  onChange={(e) => setMemberRole(team.id, m.userId, e.target.value || undefined)}
-                  disabled={isOwner}
-                >
-                  <option value="">— без роли —</option>
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setMemberRole(team.id, m.userId, v || undefined)}
+                  options={roles.map((r) => ({ value: r.id, label: r.name }))}
+                  nullable
+                  nullLabel="— без роли —"
+                  placeholder="— без роли —"
+                  size="sm"
+                  className="w-auto min-w-[120px]"
+                />
                 {!isOwner && (
                   <button
                     className="rounded p-1 text-ink-lighter hover:bg-paper-hover hover:text-red-600"

@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+
+	"github.com/gilleryugent/mimi-backend/internal/events"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -13,9 +17,12 @@ var (
 	ErrConflict   = errors.New("conflict")
 )
 
-type Service struct{ repo *Repo }
+type Service struct {
+	repo *Repo
+	rdb  *redis.Client
+}
 
-func NewService(repo *Repo) *Service { return &Service{repo: repo} }
+func NewService(repo *Repo, rdb *redis.Client) *Service { return &Service{repo: repo, rdb: rdb} }
 
 // ─── Teams ───────────────────────────────────────────────────────
 
@@ -174,14 +181,35 @@ func (s *Service) RemoveMember(ctx context.Context, teamID, userID, requesterID 
 // ─── Invitations ─────────────────────────────────────────────────
 
 func (s *Service) Invite(ctx context.Context, teamID, email, requesterID string) (*Invitation, error) {
-	if err := s.requireOwner(ctx, teamID, requesterID); err != nil {
+	t, err := s.repo.Team(ctx, teamID)
+	if err != nil {
 		return nil, err
+	}
+	if t.OwnerID != requesterID {
+		return nil, ErrForbidden
 	}
 	email = strings.TrimSpace(email)
 	if email == "" {
 		return nil, fmt.Errorf("%w: email обязателен", ErrValidation)
 	}
-	return s.repo.CreateInvitation(ctx, teamID, email, requesterID)
+	inv, err := s.repo.CreateInvitation(ctx, teamID, email, requesterID)
+	if err != nil {
+		return nil, err
+	}
+	// Публикуем событие best-effort — ошибка не прерывает создание приглашения.
+	if s.rdb != nil {
+		if pubErr := events.PublishTeamInvited(ctx, s.rdb, events.TeamInvitedEvent{
+			Type:         events.TeamInvited,
+			InvitationID: inv.ID,
+			TeamID:       t.ID,
+			TeamName:     t.Name,
+			Email:        email,
+			InvitedByID:  requesterID,
+		}); pubErr != nil {
+			slog.Warn("publish team_invited event failed", "err", pubErr)
+		}
+	}
+	return inv, nil
 }
 
 func (s *Service) InvitationsForTeam(ctx context.Context, teamID, requesterID string) ([]Invitation, error) {

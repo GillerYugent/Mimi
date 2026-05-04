@@ -1,0 +1,1609 @@
+openapi: 3.0.3
+info:
+  title: Mimi Platform API
+  description: |
+    REST API платформы Mimi — проектный менеджер с задачами, документами, канвасами и командами.
+
+    **Аутентификация**: большинство эндпоинтов требуют `Authorization: Bearer <access_token>`.
+    Получите токен через `POST /api/auth/login`.
+
+    **Архитектура**: 9 независимых микросервисов, доступных через NGINX gateway на порту 8080.
+  version: "1.0.0"
+  contact:
+    name: Mimi Dev Team
+
+servers:
+  - url: http://localhost:8080
+    description: Локальный Docker Compose
+
+tags:
+  - name: Auth
+    description: Регистрация, вход, токены, профиль
+  - name: Users
+    description: Публичные профили пользователей
+  - name: Projects
+    description: Проекты — создание, архивация, управление
+  - name: Tasks
+    description: Задачи в Kanban-стиле
+  - name: Docs
+    description: Документы с блочным редактором и версиями
+  - name: Boards
+    description: Canvas-доски (Miro-подобные)
+  - name: Teams
+    description: Команды, роли, участники
+  - name: Invitations
+    description: Приглашения в команды
+  - name: Git
+    description: Подключение GitHub / GitLab репозиториев
+  - name: Notifications
+    description: Уведомления и SSE-стрим
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ── Auth ──────────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:    { type: string, example: Иван Иванов }
+        email:   { type: string, format: email, example: ivan@example.com }
+        password: { type: string, minLength: 6, example: secret123 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:    { type: string, format: email }
+        password: { type: string }
+
+    TokenResponse:
+      type: object
+      properties:
+        accessToken:  { type: string }
+        refreshToken: { type: string }
+        expiresIn:    { type: integer, description: Секунд до истечения access token }
+        user:         { $ref: '#/components/schemas/User' }
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:      { type: string }
+        email:     { type: string, format: email }
+        avatarUrl: { type: string, format: uri }
+
+    ChangePasswordRequest:
+      type: object
+      required: [current, next]
+      properties:
+        current: { type: string }
+        next:    { type: string, minLength: 6 }
+
+    NotificationPrefs:
+      type: object
+      properties:
+        taskAssigned:      { type: boolean }
+        taskStatusChanged: { type: boolean }
+        teamInvited:       { type: boolean }
+        mentionedInDoc:    { type: boolean }
+
+    # ── Users ─────────────────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        avatarUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        notificationPrefs: { $ref: '#/components/schemas/NotificationPrefs' }
+
+    PublicUser:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        name:      { type: string }
+        email:     { type: string, format: email }
+        avatarUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    BatchRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: string, format: uuid }
+
+    MySpace:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        userId:    { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+
+    # ── Projects ──────────────────────────────────────────────────────
+    Project:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        title:       { type: string }
+        description: { type: string, nullable: true }
+        ownerId:     { type: string, format: uuid }
+        teamId:      { type: string, format: uuid, nullable: true }
+        status:      { type: string, enum: [active, archived] }
+        icon:        { type: string, example: 📁 }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    CreateProjectRequest:
+      type: object
+      required: [title]
+      properties:
+        title:       { type: string }
+        description: { type: string }
+        icon:        { type: string }
+        teamId:      { type: string, format: uuid }
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        title:       { type: string }
+        description: { type: string }
+        icon:        { type: string }
+        teamId:      { type: string, format: uuid }
+
+    # ── Tasks ─────────────────────────────────────────────────────────
+    Task:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        projectId:   { type: string, format: uuid }
+        parentId:    { type: string, format: uuid, nullable: true }
+        title:       { type: string }
+        description: { type: string }
+        status:      { type: string, enum: [backlog, todo, in_progress, review, done] }
+        priority:    { type: string, enum: [low, medium, high, critical] }
+        assigneeId:  { type: string, format: uuid, nullable: true }
+        label:       { type: string, nullable: true }
+        dueDate:     { type: string, format: date, nullable: true }
+        order:       { type: integer }
+        createdBy:   { type: string, format: uuid }
+        createdAt:   { type: string, format: date-time }
+        updatedAt:   { type: string, format: date-time }
+
+    CreateTaskRequest:
+      type: object
+      required: [projectId, title]
+      properties:
+        projectId:   { type: string, format: uuid }
+        parentId:    { type: string, format: uuid }
+        title:       { type: string }
+        description: { type: string }
+        status:      { type: string, enum: [backlog, todo, in_progress, review, done] }
+        priority:    { type: string, enum: [low, medium, high, critical] }
+        assigneeId:  { type: string, format: uuid }
+        label:       { type: string }
+        dueDate:     { type: string, format: date }
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:       { type: string }
+        description: { type: string }
+        status:      { type: string, enum: [backlog, todo, in_progress, review, done] }
+        priority:    { type: string, enum: [low, medium, high, critical] }
+        assigneeId:  { type: string, format: uuid }
+        label:       { type: string }
+        dueDate:     { type: string, format: date }
+        order:       { type: integer }
+
+    TaskStats:
+      type: object
+      properties:
+        total:       { type: integer }
+        byStatus:
+          type: object
+          additionalProperties: { type: integer }
+        byPriority:
+          type: object
+          additionalProperties: { type: integer }
+
+    # ── Docs ──────────────────────────────────────────────────────────
+    Block:
+      type: object
+      properties:
+        id:      { type: string }
+        type:
+          type: string
+          enum: [paragraph, heading_1, heading_2, heading_3, bulleted_list,
+                 numbered_list, todo, quote, divider, code, table, image]
+        content: { type: string }
+        checked: { type: boolean, description: Только для блоков типа todo }
+
+    DocPage:
+      type: object
+      properties:
+        id:           { type: string, format: uuid }
+        title:        { type: string }
+        icon:         { type: string, nullable: true }
+        blocks:       { type: array, items: { $ref: '#/components/schemas/Block' } }
+        parentPageId: { type: string, format: uuid, nullable: true }
+        projectId:    { type: string, format: uuid, nullable: true }
+        mySpaceId:    { type: string, format: uuid, nullable: true }
+        createdBy:    { type: string, format: uuid }
+        updatedAt:    { type: string, format: date-time }
+        createdAt:    { type: string, format: date-time }
+
+    CreateDocRequest:
+      type: object
+      required: [title]
+      properties:
+        title:        { type: string }
+        icon:         { type: string }
+        parentPageId: { type: string, format: uuid }
+        projectId:    { type: string, format: uuid }
+        mySpaceId:    { type: string, format: uuid }
+        createdBy:    { type: string, format: uuid }
+
+    UpdateDocRequest:
+      type: object
+      properties:
+        title:  { type: string }
+        icon:   { type: string }
+        blocks: { type: array, items: { $ref: '#/components/schemas/Block' } }
+
+    DocVersion:
+      type: object
+      properties:
+        id:       { type: string, format: uuid }
+        pageId:   { type: string, format: uuid }
+        title:    { type: string }
+        blocks:   { type: array, items: { $ref: '#/components/schemas/Block' } }
+        savedBy:  { type: string, format: uuid }
+        savedAt:  { type: string, format: date-time }
+
+    # ── Boards ────────────────────────────────────────────────────────
+    CanvasElement:
+      type: object
+      properties:
+        id:     { type: string }
+        type:   { type: string, enum: [block, sticker, text, arrow, mind_node] }
+        x:      { type: number }
+        y:      { type: number }
+        width:  { type: number }
+        height: { type: number }
+        text:   { type: string }
+        color:  { type: string, enum: [white, yellow, pink, green, blue, purple, orange, dark] }
+        fromId: { type: string, description: ID исходного узла (только для arrow) }
+        toId:   { type: string, description: ID целевого узла (только для arrow) }
+
+    Canvas:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        title:     { type: string }
+        projectId: { type: string, format: uuid, nullable: true }
+        mySpaceId: { type: string, format: uuid, nullable: true }
+        ownerId:   { type: string, format: uuid }
+        elements:  { type: array, items: { $ref: '#/components/schemas/CanvasElement' } }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateCanvasRequest:
+      type: object
+      required: [title]
+      properties:
+        title:     { type: string }
+        projectId: { type: string, format: uuid }
+        mySpaceId: { type: string, format: uuid }
+
+    UpdateCanvasRequest:
+      type: object
+      properties:
+        title:    { type: string }
+        elements: { type: array, items: { $ref: '#/components/schemas/CanvasElement' } }
+
+    # ── Teams ─────────────────────────────────────────────────────────
+    Team:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        name:      { type: string }
+        ownerId:   { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+
+    RolePermissions:
+      type: object
+      properties:
+        canViewDocs:   { type: boolean }
+        canEditDocs:   { type: boolean }
+        canViewTasks:  { type: boolean }
+        canEditTasks:  { type: boolean }
+        canViewBoards: { type: boolean }
+        canEditBoards: { type: boolean }
+        canManageTeam: { type: boolean }
+
+    Role:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        teamId:      { type: string, format: uuid }
+        name:        { type: string }
+        permissions: { $ref: '#/components/schemas/RolePermissions' }
+
+    Member:
+      type: object
+      properties:
+        teamId:   { type: string, format: uuid }
+        userId:   { type: string, format: uuid }
+        roleId:   { type: string, format: uuid, nullable: true }
+        joinedAt: { type: string, format: date-time }
+
+    Invitation:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        teamId:    { type: string, format: uuid }
+        email:     { type: string, format: email }
+        status:    { type: string, enum: [pending, accepted, declined, cancelled] }
+        invitedBy: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+
+    # ── Git ───────────────────────────────────────────────────────────
+    GitRepo:
+      type: object
+      properties:
+        id:          { type: string, format: uuid }
+        projectId:   { type: string, format: uuid }
+        provider:    { type: string, enum: [github, gitlab] }
+        repoUrl:     { type: string, format: uri }
+        name:        { type: string }
+        description: { type: string, nullable: true }
+        createdAt:   { type: string, format: date-time }
+
+    ConnectGitRequest:
+      type: object
+      required: [projectId, provider, repoUrl]
+      properties:
+        projectId:   { type: string, format: uuid }
+        provider:    { type: string, enum: [github, gitlab] }
+        repoUrl:     { type: string, format: uri }
+        accessToken: { type: string, description: PAT для доступа к приватным репозиториям }
+
+    Commit:
+      type: object
+      properties:
+        sha:       { type: string }
+        message:   { type: string }
+        author:    { type: string }
+        date:      { type: string, format: date-time }
+        url:       { type: string, format: uri }
+
+    PullRequest:
+      type: object
+      properties:
+        number:    { type: integer }
+        title:     { type: string }
+        state:     { type: string, enum: [open, closed, merged] }
+        author:    { type: string }
+        url:       { type: string, format: uri }
+        createdAt: { type: string, format: date-time }
+
+    # ── Notifications ─────────────────────────────────────────────────
+    Notification:
+      type: object
+      properties:
+        id:        { type: string, format: uuid }
+        userId:    { type: string, format: uuid }
+        type:
+          type: string
+          enum: [task_assigned, task_status_changed, team_invited, mentioned_in_doc, comment_added]
+        title:     { type: string }
+        body:      { type: string }
+        link:      { type: string, nullable: true }
+        isRead:    { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    # ── Common ────────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      properties:
+        code:    { type: string, example: validation }
+        message: { type: string, example: Описание ошибки }
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ═══════════════════════════════════════════════════════════════════
+  # AUTH
+  # ═══════════════════════════════════════════════════════════════════
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация нового пользователя
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        "201":
+          description: Успешная регистрация — возвращает пару токенов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+        "409":
+          description: Email уже занят
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              example: { code: email_taken, message: Email уже занят }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход в систему
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        "200":
+          description: Успешный вход
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        "401":
+          description: Неверный email или пароль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновление токенов по refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        "200":
+          description: Новая пара токенов
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Выход (инвалидация refresh token)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogoutRequest' }
+      responses:
+        "204": { description: Успешный выход }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Профиль текущего пользователя
+      responses:
+        "200":
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Auth]
+      summary: Обновление профиля (имя, email, аватар)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProfileRequest' }
+      responses:
+        "200":
+          description: Обновлённый профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+        "409": { description: Email уже занят }
+
+  /api/auth/me/password:
+    post:
+      tags: [Auth]
+      summary: Смена пароля
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        "204": { description: Пароль изменён }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  /api/auth/me/notifications:
+    patch:
+      tags: [Auth]
+      summary: Настройки уведомлений текущего пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationPrefs' }
+      responses:
+        "204": { description: Настройки сохранены }
+        "401": { $ref: '#/components/responses/Unauthorized' }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # USERS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/users/me/space:
+    get:
+      tags: [Users]
+      summary: Личное пространство текущего пользователя (создаётся автоматически)
+      responses:
+        "200":
+          description: MySpace
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MySpace' }
+
+  /api/users/batch:
+    post:
+      tags: [Users]
+      summary: Пакетное получение публичных профилей по списку ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatchRequest' }
+      responses:
+        "200":
+          description: Список профилей
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicUser' }
+
+  /api/users/search:
+    get:
+      tags: [Users]
+      summary: Поиск пользователей по email (prefix, max 20)
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+          description: Начало email адреса
+      responses:
+        "200":
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicUser' }
+
+  /api/users/{id}:
+    get:
+      tags: [Users]
+      summary: Получить публичный профиль пользователя по ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Профиль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicUser' }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # PROJECTS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: Список проектов текущего пользователя (+ командных)
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [active, archived], default: active }
+      responses:
+        "200":
+          description: Список проектов
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Project' }
+    post:
+      tags: [Projects]
+      summary: Создать проект
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProjectRequest' }
+      responses:
+        "201":
+          description: Созданный проект
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+        "400": { $ref: '#/components/responses/BadRequest' }
+
+  /api/projects/{id}:
+    get:
+      tags: [Projects]
+      summary: Получить проект по ID
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+          description: Проект
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Projects]
+      summary: Обновить проект
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProjectRequest' }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+          description: Обновлённый проект
+    delete:
+      tags: [Projects]
+      summary: Удалить проект
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Удалено }
+        "404": { $ref: '#/components/responses/NotFound' }
+
+  /api/projects/{id}/archive:
+    post:
+      tags: [Projects]
+      summary: Архивировать проект
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+          description: Архивированный проект
+
+  /api/projects/{id}/restore:
+    post:
+      tags: [Projects]
+      summary: Восстановить проект из архива
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Project' }
+          description: Восстановленный проект
+
+  # ═══════════════════════════════════════════════════════════════════
+  # TASKS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: Список задач (с фильтрами)
+      parameters:
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string, enum: [backlog, todo, in_progress, review, done] }
+        - name: assigneeId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: label
+          in: query
+          schema: { type: string }
+        - name: priority
+          in: query
+          schema: { type: string, enum: [low, medium, high, critical] }
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: includeSubtasks
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Список задач
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Task' }
+    post:
+      tags: [Tasks]
+      summary: Создать задачу
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTaskRequest' }
+      responses:
+        "201":
+          description: Созданная задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+
+  /api/tasks/stats:
+    get:
+      tags: [Tasks]
+      summary: Статистика задач по проекту
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Статистика
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TaskStats' }
+
+  /api/tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Получить задачу по ID
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Tasks]
+      summary: Обновить задачу
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTaskRequest' }
+      responses:
+        "200":
+          description: Обновлённая задача
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Task' }
+    delete:
+      tags: [Tasks]
+      summary: Удалить задачу
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Удалено }
+
+  /api/tasks/{id}/subtasks:
+    get:
+      tags: [Tasks]
+      summary: Список подзадач
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Подзадачи
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Task' }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # DOCS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/docs:
+    get:
+      tags: [Docs]
+      summary: Корневые страницы документов (scope задаётся через query)
+      parameters:
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+          description: ID проекта (или mySpaceId — одно из двух)
+        - name: mySpaceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Список корневых страниц
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DocPage' }
+    post:
+      tags: [Docs]
+      summary: Создать страницу документа
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateDocRequest' }
+      responses:
+        "201":
+          description: Созданная страница
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocPage' }
+
+  /api/docs/search:
+    get:
+      tags: [Docs]
+      summary: Полнотекстовый поиск по документам
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: mySpaceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Найденные страницы
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DocPage' }
+
+  /api/docs/{id}:
+    get:
+      tags: [Docs]
+      summary: Получить страницу документа
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Страница
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocPage' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Docs]
+      summary: Обновить страницу (title / icon / blocks)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateDocRequest' }
+      responses:
+        "200":
+          description: Обновлённая страница
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocPage' }
+    delete:
+      tags: [Docs]
+      summary: Удалить страницу (рекурсивно удаляет дочерние)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Удалено }
+
+  /api/docs/{id}/children:
+    get:
+      tags: [Docs]
+      summary: Дочерние страницы
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Дочерние страницы
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DocPage' }
+
+  /api/docs/{id}/versions:
+    get:
+      tags: [Docs]
+      summary: История версий страницы
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Список версий
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DocVersion' }
+    post:
+      tags: [Docs]
+      summary: Сохранить текущую версию страницы
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "201":
+          description: Сохранённая версия
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocVersion' }
+
+  /api/docs/versions/{versionId}/restore:
+    post:
+      tags: [Docs]
+      summary: Восстановить страницу из версии
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Восстановленная страница
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocPage' }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # BOARDS (Canvas)
+  # ═══════════════════════════════════════════════════════════════════
+  /api/boards:
+    get:
+      tags: [Boards]
+      summary: Список канвасов
+      parameters:
+        - name: projectId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: mySpaceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Список канвасов
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Canvas' }
+    post:
+      tags: [Boards]
+      summary: Создать канвас
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateCanvasRequest' }
+      responses:
+        "201":
+          description: Созданный канвас
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Canvas' }
+
+  /api/boards/{id}:
+    get:
+      tags: [Boards]
+      summary: Получить канвас с элементами
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Канвас
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Canvas' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Boards]
+      summary: Обновить канвас (title и/или elements)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCanvasRequest' }
+      responses:
+        "200":
+          description: Обновлённый канвас
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Canvas' }
+    delete:
+      tags: [Boards]
+      summary: Удалить канвас
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Удалено }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # TEAMS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/teams:
+    get:
+      tags: [Teams]
+      summary: Команды текущего пользователя (владелец или участник)
+      responses:
+        "200":
+          description: Список команд
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Team' }
+    post:
+      tags: [Teams]
+      summary: Создать команду
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "201":
+          description: Созданная команда
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+
+  /api/teams/{id}:
+    get:
+      tags: [Teams]
+      summary: Получить команду
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Команда
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Teams]
+      summary: Переименовать команду (только владелец)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: Обновлённая команда
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+    delete:
+      tags: [Teams]
+      summary: Удалить команду (только владелец)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Удалено }
+
+  /api/teams/{id}/roles:
+    get:
+      tags: [Teams]
+      summary: Роли команды
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Роли
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Role' }
+    post:
+      tags: [Teams]
+      summary: Создать роль (только владелец)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:        { type: string }
+                permissions: { $ref: '#/components/schemas/RolePermissions' }
+      responses:
+        "201":
+          description: Созданная роль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+
+  /api/teams/roles/{roleId}:
+    patch:
+      tags: [Teams]
+      summary: Обновить роль (только владелец команды)
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:        { type: string }
+                permissions: { $ref: '#/components/schemas/RolePermissions' }
+      responses:
+        "200":
+          description: Обновлённая роль
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Role' }
+    delete:
+      tags: [Teams]
+      summary: Удалить роль
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Удалено }
+
+  /api/teams/{id}/members:
+    get:
+      tags: [Teams]
+      summary: Участники команды
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Список участников
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Member' }
+
+  /api/teams/{id}/members/{userId}:
+    patch:
+      tags: [Teams]
+      summary: Назначить роль участнику (только владелец)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                roleId: { type: string, format: uuid, nullable: true }
+      responses:
+        "200":
+          description: Обновлённый участник
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+    delete:
+      tags: [Teams]
+      summary: Исключить участника (владелец или сам участник)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: Исключён }
+
+  /api/teams/{id}/invitations:
+    get:
+      tags: [Invitations]
+      summary: Список приглашений команды
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Приглашения
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Invitation' }
+    post:
+      tags: [Invitations]
+      summary: Пригласить пользователя по email
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "201":
+          description: Приглашение создано
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invitation' }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # INVITATIONS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/invitations:
+    get:
+      tags: [Invitations]
+      summary: Ожидающие приглашения для email текущего пользователя
+      parameters:
+        - name: email
+          in: query
+          required: true
+          schema: { type: string, format: email }
+      responses:
+        "200":
+          description: Список ожидающих приглашений
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Invitation' }
+
+  /api/invitations/{id}/accept:
+    post:
+      tags: [Invitations]
+      summary: Принять приглашение в команду
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - name: email
+          in: query
+          required: true
+          schema: { type: string, format: email }
+          description: Email должен совпадать с email в приглашении
+      responses:
+        "204": { description: Приглашение принято, пользователь добавлен в команду }
+        "403": { description: Email не совпадает с приглашением }
+        "409": { description: Приглашение уже обработано }
+
+  /api/invitations/{id}/decline:
+    post:
+      tags: [Invitations]
+      summary: Отклонить приглашение
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+        - name: email
+          in: query
+          required: true
+          schema: { type: string, format: email }
+      responses:
+        "204": { description: Приглашение отклонено }
+
+  /api/invitations/{id}:
+    delete:
+      tags: [Invitations]
+      summary: Отменить приглашение (только владелец команды)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Приглашение отменено }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # GIT
+  # ═══════════════════════════════════════════════════════════════════
+  /api/git/repositories:
+    post:
+      tags: [Git]
+      summary: Подключить репозиторий к проекту
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConnectGitRequest' }
+      responses:
+        "201":
+          description: Подключённый репозиторий
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitRepo' }
+        "409": { description: Репозиторий уже подключён }
+        "401": { description: Не удалось авторизоваться у провайдера }
+    get:
+      tags: [Git]
+      summary: Репозиторий проекта (null если не подключён)
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Репозиторий или null
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitRepo' }
+
+  /api/git/repositories/{id}:
+    get:
+      tags: [Git]
+      summary: Получить репозиторий по ID
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Репозиторий
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GitRepo' }
+        "404": { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Git]
+      summary: Отключить репозиторий от проекта
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Репозиторий отключён }
+
+  /api/git/repositories/{id}/commits:
+    get:
+      tags: [Git]
+      summary: Последние коммиты репозитория (из API провайдера)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Коммиты
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Commit' }
+
+  /api/git/repositories/{id}/pull-requests:
+    get:
+      tags: [Git]
+      summary: Pull requests репозитория (из API провайдера)
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "200":
+          description: Pull requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PullRequest' }
+
+  # ═══════════════════════════════════════════════════════════════════
+  # NOTIFICATIONS
+  # ═══════════════════════════════════════════════════════════════════
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Уведомления текущего пользователя
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 500 }
+      responses:
+        "200":
+          description: Уведомления
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+    post:
+      tags: [Notifications]
+      summary: Создать уведомление вручную (для отладки / напоминаний)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, title]
+              properties:
+                userId: { type: string, format: uuid, description: По умолчанию — текущий пользователь }
+                type:
+                  type: string
+                  enum: [task_assigned, task_status_changed, team_invited, mentioned_in_doc, comment_added]
+                title: { type: string }
+                body:  { type: string }
+                link:  { type: string }
+      responses:
+        "201":
+          description: Созданное уведомление
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Notification' }
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Количество непрочитанных уведомлений
+      responses:
+        "200":
+          description: Счётчик
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+
+  /api/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Отметить уведомление как прочитанное
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Отмечено }
+
+  /api/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Отметить все уведомления как прочитанные
+      responses:
+        "204": { description: Все отмечены }
+
+  /api/notifications/read:
+    delete:
+      tags: [Notifications]
+      summary: Удалить все прочитанные уведомления
+      responses:
+        "204": { description: Очищено }
+
+  /api/notifications/{id}:
+    delete:
+      tags: [Notifications]
+      summary: Удалить уведомление
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        "204": { description: Удалено }
+
+  /api/notifications/stream:
+    get:
+      tags: [Notifications]
+      summary: SSE-стрим уведомлений в реальном времени
+      description: |
+        Server-Sent Events. Браузерный `EventSource` не поддерживает заголовки,
+        поэтому токен передаётся через query параметр `?token=<access_token>`.
+
+        **Формат события:**
+        ```
+        event: notification
+        data: {"id":"...","type":"task_assigned","title":"..."}
+        ```
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+          description: Access JWT token
+      responses:
+        "200":
+          description: SSE поток
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  # ─── reusable responses / parameters ────────────────────────────────
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    BadRequest:
+      description: Ошибка валидации
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { code: validation, message: title обязателен }
+    Unauthorized:
+      description: Требуется аутентификация
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { code: unauthorized, message: Invalid or missing token }
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example: { code: not_found, message: Ресурс не найден }

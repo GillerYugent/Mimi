@@ -1,24 +1,25 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
         ink: {
-          DEFAULT: '#37352f',
-          light: '#787774',
-          lighter: '#9b9a97',
+          DEFAULT: 'rgb(var(--color-ink) / <alpha-value>)',
+          light: 'rgb(var(--color-ink-light) / <alpha-value>)',
+          lighter: 'rgb(var(--color-ink-lighter) / <alpha-value>)',
         },
         paper: {
-          DEFAULT: '#ffffff',
-          soft: '#fbfbfa',
-          sidebar: '#f7f7f5',
-          hover: '#efefee',
-          active: '#e8e8e6',
+          DEFAULT: 'rgb(var(--color-paper) / <alpha-value>)',
+          soft: 'rgb(var(--color-paper-soft) / <alpha-value>)',
+          sidebar: 'rgb(var(--color-paper-sidebar) / <alpha-value>)',
+          hover: 'rgb(var(--color-paper-hover) / <alpha-value>)',
+          active: 'rgb(var(--color-paper-active) / <alpha-value>)',
         },
         line: {
-          DEFAULT: 'rgba(55, 53, 47, 0.09)',
-          strong: 'rgba(55, 53, 47, 0.16)',
+          DEFAULT: 'var(--line)',
+          strong: 'var(--line-strong)',
         },
       },
       fontFamily: {

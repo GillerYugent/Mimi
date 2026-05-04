@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -18,12 +21,13 @@ const ListCacheTTL = 60 * time.Second
 var ErrValidation = errors.New("validation")
 
 type Service struct {
-	repo *Repo
-	rdb  *redis.Client
+	repo     *Repo
+	rdb      *redis.Client
+	teamsURL string // base URL of teams-service for internal calls
 }
 
-func NewService(repo *Repo, rdb *redis.Client) *Service {
-	return &Service{repo: repo, rdb: rdb}
+func NewService(repo *Repo, rdb *redis.Client, teamsURL string) *Service {
+	return &Service{repo: repo, rdb: rdb, teamsURL: teamsURL}
 }
 
 // ─── Create ──────────────────────────────────────────────────────
@@ -68,7 +72,10 @@ func (s *Service) List(ctx context.Context, ownerID string, status ProjectStatus
 		}
 	}
 
-	list, err := s.repo.ListByOwner(ctx, ownerID, status)
+	// Получаем команды пользователя, чтобы включить проекты команд в список.
+	teamIDs := s.fetchTeamIDs(ctx, ownerID)
+
+	list, err := s.repo.ListByOwnerOrTeams(ctx, ownerID, teamIDs, status)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +83,38 @@ func (s *Service) List(ctx context.Context, ownerID string, status ProjectStatus
 		_ = s.rdb.Set(ctx, key, b, ListCacheTTL).Err()
 	}
 	return list, nil
+}
+
+// fetchTeamIDs calls teams-service (internal endpoint) to get the user's team IDs.
+// Returns an empty slice on any error — the caller falls back to owner-only listing.
+func (s *Service) fetchTeamIDs(ctx context.Context, userID string) []string {
+	if s.teamsURL == "" {
+		return nil
+	}
+	url := fmt.Sprintf("%s/internal/teams/user/%s", s.teamsURL, userID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		slog.Warn("fetchTeamIDs: build request", "err", err)
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Warn("fetchTeamIDs: call teams-service", "err", err)
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	if err := json.Unmarshal(body, &ids); err != nil {
+		return nil
+	}
+	return ids
 }
 
 // ─── Mutations ───────────────────────────────────────────────────

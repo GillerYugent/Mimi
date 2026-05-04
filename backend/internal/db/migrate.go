@@ -44,6 +44,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	}
 	sort.Strings(files)
 
+	// Namespace versions by directory basename to avoid collisions when
+	// multiple services share one database (e.g. auth + users → mimi_users).
+	ns := filepath.Base(dir)
+
 	applied := map[string]bool{}
 	rows, err := pool.Query(ctx, `SELECT version FROM schema_migrations`)
 	if err != nil {
@@ -60,10 +64,11 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	rows.Close()
 
 	for _, name := range files {
-		if applied[name] {
+		version := ns + "/" + name
+		if applied[version] {
 			continue
 		}
-		slog.Info("applying migration", "file", name)
+		slog.Info("applying migration", "file", version)
 		content, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			return fmt.Errorf("read %s: %w", name, err)
@@ -76,7 +81,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("apply %s: %w", name, err)
 		}
-		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, name); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, version); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record %s: %w", name, err)
 		}

@@ -4,27 +4,32 @@ import { useTasks } from '@/store/taskStore'
 import { useProjects } from '@/store/projectStore'
 import { useAuth } from '@/store/authStore'
 import { Input, Textarea } from '@/components/ui/Input'
+import { DatePicker } from '@/components/ui/DatePicker'
 import { IconCheck, IconPlus, IconTrash } from '@/components/ui/Icon'
 import { formatFullDate, formatDateInput } from '@/utils/date'
 
 const MY_SPACE_TITLE = 'My Space'
 const MY_SPACE_ICON = '⭐'
 
-// На бэке у нас единый формат — задачи привязаны к project_id. Поэтому
-// для личного пространства мы лениво создаём (или находим) проект с
-// особым названием/иконкой и используем его id для задач.
 async function ensureMySpaceProject(): Promise<string> {
+  // Check if we already know the ID from a previous call.
+  const cached = useAuth.getState().mySpaceProjectId
+  if (cached) return cached
+
   const projects = useProjects.getState()
   const found = Object.values(projects.projects).find(
     (p) => p.title === MY_SPACE_TITLE && p.icon === MY_SPACE_ICON
   )
-  if (found) return found.id
-  const created = await projects.createProject({
-    title: MY_SPACE_TITLE,
-    description: 'Личные задачи',
-    icon: MY_SPACE_ICON,
-  })
-  return created.id
+  const id = found
+    ? found.id
+    : (await projects.createProject({
+        title: MY_SPACE_TITLE,
+        description: 'Личные задачи',
+        icon: MY_SPACE_ICON,
+      })).id
+
+  useAuth.setState({ mySpaceProjectId: id })
+  return id
 }
 
 interface Props {
@@ -97,11 +102,12 @@ export function MySpaceTasks({ userId }: Props) {
           placeholder="Детали (опционально)"
         />
         <div className="mt-2 flex items-center gap-2">
-          <input
-            type="date"
-            className="input w-auto text-xs"
+          <DatePicker
             value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
+            onChange={setDeadline}
+            placeholder="Дедлайн"
+            size="sm"
+            className="w-auto"
           />
           <button
             className="btn btn-primary ml-auto text-sm"
@@ -190,14 +196,14 @@ function TaskRow({
         )}
       </div>
       {onUpdateDeadline && (
-        <input
-          type="date"
-          className="input w-auto py-0.5 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-          value={formatDateInput(task.deadline)}
-          onChange={(e) =>
-            onUpdateDeadline(e.target.value ? new Date(e.target.value).toISOString() : undefined)
-          }
-        />
+        <div className="opacity-0 transition-opacity group-hover:opacity-100">
+          <DatePicker
+            value={formatDateInput(task.deadline)}
+            onChange={(v) => onUpdateDeadline(v ? new Date(v).toISOString() : undefined)}
+            size="sm"
+            ghost
+          />
+        </div>
       )}
       <button
         className="rounded p-1 text-ink-lighter opacity-0 hover:bg-paper-hover hover:text-red-600 group-hover:opacity-100"
