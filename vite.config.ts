@@ -16,6 +16,22 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // SSE stream — must not be buffered, so we give it its own entry with a
+      // long timeout and a proxyRes hook that flushes headers immediately.
+      '/api/notifications/stream': {
+        target: API_TARGET,
+        changeOrigin: true,
+        timeout: 0,
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, _req, res) => {
+            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+              // Flush headers to the browser immediately so EventSource can
+              // start reading without waiting for the first chunk.
+              res.flushHeaders()
+            }
+          })
+        },
+      },
       '/api': {
         target: API_TARGET,
         changeOrigin: true,

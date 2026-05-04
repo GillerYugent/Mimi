@@ -10,28 +10,58 @@ export const notificationsApi = {
   clearRead: () => del<void>('/notifications/read'),
 }
 
-// Stream открывает SSE-соединение и возвращает функцию отписки.
-// EventSource не умеет ставить headers — токен передаётся через query.
+// streamNotifications opens an SSE connection and returns a cleanup function.
+// EventSource cannot set Authorization headers, so the token is passed as a
+// query parameter.  On any error (dropped connection, expired token, etc.) the
+// function makes a REST probe so the api client's automatic token-refresh runs,
+// then reopens the EventSource with the fresh token.
 export function streamNotifications(
   onNotification: (n: Notification) => void,
-  onError?: (e: Event) => void
 ): () => void {
-  const t = getTokens()
-  if (!t) return () => {}
+  let closed = false
+  let es: EventSource | null = null
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
 
-  const url = `/api/notifications/stream?token=${encodeURIComponent(t.accessToken)}`
-  const es = new EventSource(url)
+  function connect() {
+    if (closed) return
+    const t = getTokens()
+    if (!t) return
 
-  es.addEventListener('notification', (e) => {
-    try {
-      const data = JSON.parse((e as MessageEvent).data) as Notification
-      onNotification(data)
-    } catch {
-      // ignore malformed payload
+    es = new EventSource(
+      `/api/notifications/stream?token=${encodeURIComponent(t.accessToken)}`
+    )
+
+    es.addEventListener('notification', (e) => {
+      try {
+        onNotification(JSON.parse((e as MessageEvent).data) as Notification)
+      } catch {
+        // ignore malformed payload
+      }
+    })
+
+    es.onerror = () => {
+      es?.close()
+      es = null
+      if (closed) return
+      // Probe the REST API — this triggers automatic token refresh (via the
+      // api client's 401 → refresh → retry logic) before we reopen the SSE
+      // connection with a fresh token.
+      get<{ count: number }>('/notifications/unread-count')
+        .catch(() => {/* ignore — we just want the side-effect of token refresh */})
+        .finally(() => {
+          if (!closed) {
+            retryTimer = setTimeout(connect, 3_000)
+          }
+        })
     }
-  })
+  }
 
-  if (onError) es.addEventListener('error', onError)
+  connect()
 
-  return () => es.close()
+  return () => {
+    closed = true
+    if (retryTimer !== null) clearTimeout(retryTimer)
+    es?.close()
+    es = null
+  }
 }
